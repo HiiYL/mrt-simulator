@@ -14,16 +14,37 @@ class NetworkModelService {
 
         Object.entries(MRT_LINES).forEach(([lineCode, lineConfig]) => {
             // 1. Get raw geometry
-            const feature = MRT_GEOJSON.features.find(f => f.properties.code === lineCode);
+            // Support multiple features (e.g., SK has two loops as separate features)
+            const features = MRT_GEOJSON.features.filter(f => f.properties.code === lineCode);
+
             let detailedPath = [];
 
-            if (feature) {
-                if (feature.geometry.type === 'LineString') {
-                    detailedPath = feature.geometry.coordinates;
-                } else if (feature.geometry.type === 'MultiLineString') {
-                    // Pick longest segment
-                    detailedPath = feature.geometry.coordinates.reduce((prev, curr) => curr.length > prev.length ? curr : prev, []);
-                }
+            if (features.length > 0) {
+                // Collect all segments
+                const segments = [];
+                features.forEach(feature => {
+                    if (feature.geometry.type === 'LineString') {
+                        segments.push(feature.geometry.coordinates);
+                    } else if (feature.geometry.type === 'MultiLineString') {
+                        feature.geometry.coordinates.forEach(seg => segments.push(seg));
+                    }
+                });
+
+                // Merge segments if they are connected (or just concat them for now)
+                // For SK (Figure 8), they match at STC. Concat works.
+                // For EW (Main + Branch), if we concat, we get Main -> Branch jump.
+                // But EW is already split into EW and CG in data (by my fix).
+                // So this logic mainly targets SK/PG loops.
+                // Flatten segments into one single path array
+
+                // Heuristic: If we have multiple segments, we try to order them?
+                // For now, naive concat. SK features are identical start/end so order doesn't matter much
+                // unless direction matters.
+                segments.forEach(seg => {
+                    // Check if we need to insert a separator? 
+                    // No, RouteInterpolator just iterates points.
+                    detailedPath.push(...seg);
+                });
             }
 
             // 2. Align Stations (Snap to Vertex)

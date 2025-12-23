@@ -1,6 +1,7 @@
 
 // Simulation Engine - Manages train spawning and movement with per-station travel times
-import { LINE_SCHEDULES, getDwellTime, getLineFrequency, isPeakHour, getOperatingStatus, DEPOTS, getDepotsForLine } from '../data/schedule.js';
+import { LINE_SCHEDULES, getDwellTime, getLineFrequency, isPeakHour, getOperatingStatus } from '../data/schedule.js';
+import { DEPOTS, getDepotsForLine } from '../data/depots.js';
 import { RouteInterpolator } from './RouteInterpolator.js';
 import { NetworkModel } from '../data/NetworkModel.js';
 import { INTER_STATION_TIMES } from '../data/travel-times.js';
@@ -35,17 +36,31 @@ export class SimulationEngine {
     }
 
     initializeRoutes() {
-        // Initialize NetworkModel (loads data, aligns stations)
         NetworkModel.initialize();
         const lines = NetworkModel.getAllLines();
-
         Object.entries(lines).forEach(([lineCode, line]) => {
-            const coordinates = line.stations.map(s => [s.lng, s.lat]);
-            const detailedCoords = line.detailedPath; // Already processed by NetworkModel
+            // Use loopPath if available to define the correct sequence of stations
+            // forcing the simulation to follow the full loop (including repeated interchanges)
+            let orderedStations;
+            if (line.loopPath) {
+                orderedStations = line.loopPath.map(code =>
+                    line.stations.find(s => s.code === code)
+                ).filter(s => s); // Filter out any missing
+            } else {
+                orderedStations = line.stations;
+            }
+
+            const coordinates = orderedStations.map(s => [s.lng, s.lat]);
+
+            // Need detailed coords for path following
+            let detailedCoords = null;
+            if (line.detailedPath && line.detailedPath.length > 0) {
+                detailedCoords = line.detailedPath;
+            }
 
             this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates, detailedCoords);
-            this.activeTrains.set(lineCode, []);
-            this.lastInjectionTime.set(lineCode, -999);
+            this.activeTrains.set(lineCode, []); // Initialize active trains for the line
+            this.lastInjectionTime.set(lineCode, -999); // Initialize last injection time
         });
     }
 
