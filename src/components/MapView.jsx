@@ -4,7 +4,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateStationsGeoJSON, MRT_LINES, generateStraightLineGeoJSON } from '../data/mrt-routes.js';
 import { DEPOTS } from '../data/depots.js';
-import MRT_GEOJSON from '../data/singapore-mrt-fixed.json';
+import { NetworkModel } from '../data/NetworkModel.js';
 import STATION_POLYGONS from '../data/station-polygons.json';
 
 // Singapore bounds - restrict map to Singapore only
@@ -205,13 +205,15 @@ export const MapView = memo(MapViewComponent);
 
 function addMRTRoutes(map) {
     // Hybrid approach: Use real world geometry where available, fallback to straight lines where missing
-    const presentCodes = new Set(MRT_GEOJSON.features.map(f => f.properties.code));
+    const routeGeoJSON = NetworkModel.getRouteGeoJSON(); // Curved paths from NetworkModel
     const fallbackFeatures = [];
 
-    Object.keys(MRT_LINES).forEach(code => {
+    // Check which lines are missing from routeGeoJSON
+    const presentCodes = new Set(routeGeoJSON.features.map(f => f.properties.code));
+    const allLines = NetworkModel.getAllLines();
+
+    Object.keys(allLines).forEach(code => {
         // If the line is not in the detailed GeoJSON, generate a fallback
-        // Note: strict check on 'code'. If GeoJSON uses different code, we might double draw.
-        // But our process-routes script ensures 'code' matches.
         if (!presentCodes.has(code)) {
             console.warn(`Line ${code} missing from detailed geometry, using fallback.`);
             const fallback = generateStraightLineGeoJSON(code);
@@ -221,7 +223,7 @@ function addMRTRoutes(map) {
 
     const combinedData = {
         type: 'FeatureCollection',
-        features: [...MRT_GEOJSON.features, ...fallbackFeatures]
+        features: [...routeGeoJSON.features, ...fallbackFeatures]
     };
 
     map.addSource('mrt-routes', {
@@ -308,7 +310,8 @@ function addMRTRoutes(map) {
 }
 
 function addMRTStations(map) {
-    const stationsGeoJSON = generateStationsGeoJSON();
+    const lines = NetworkModel.getAllLines();
+    const stationsGeoJSON = generateStationsGeoJSON(lines);
 
     map.addSource('mrt-stations', {
         type: 'geojson',

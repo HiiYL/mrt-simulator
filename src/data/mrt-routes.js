@@ -1423,10 +1423,10 @@ export function generateStraightLineGeoJSON(lineCode) {
 }
 
 // Generate station points GeoJSON
-export function generateStationsGeoJSON() {
+export function generateStationsGeoJSON(lines = MRT_LINES) {
     const features = [];
 
-    Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+    Object.entries(lines).forEach(([lineCode, line]) => {
         line.stations.forEach(station => {
             features.push({
                 type: 'Feature',

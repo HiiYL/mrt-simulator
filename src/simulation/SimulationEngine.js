@@ -1,10 +1,9 @@
+
 // Simulation Engine - Manages train spawning and movement with per-station travel times
-import { MRT_LINES, getAllLineCodes } from '../data/mrt-routes.js';
-import { LINE_SCHEDULES, getLineFrequency, getDwellTime, getOperatingStatus, getFrequency, isPeakHour } from '../data/schedule.js';
+import { LINE_SCHEDULES, getDwellTime, getLineFrequency, isPeakHour, getOperatingStatus, DEPOTS, getDepotsForLine } from '../data/schedule.js';
 import { RouteInterpolator } from './RouteInterpolator.js';
+import { NetworkModel } from '../data/NetworkModel.js';
 import { INTER_STATION_TIMES } from '../data/travel-times.js';
-import { DEPOTS, getDepotsForLine } from '../data/depots.js';
-import MRT_GEOJSON from '../data/singapore-mrt-fixed.json';
 
 // Singleton instance
 let engineInstance = null;
@@ -36,24 +35,13 @@ export class SimulationEngine {
     }
 
     initializeRoutes() {
-        Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
-            const coordinates = line.stations.map(s => [s.lng, s.lat]);
+        // Initialize NetworkModel (loads data, aligns stations)
+        NetworkModel.initialize();
+        const lines = NetworkModel.getAllLines();
 
-            // Find detailed path from GeoJSON
-            const feature = MRT_GEOJSON.features.find(f => f.properties.code === lineCode);
-            // Ensure we have a LineString (array of points)
-            // If MultiLineString, we technically should merge them, but for now take the longest or first?
-            // Inspection implies LineString.
-            // detailedCoords = (feature && feature.geometry.type === 'LineString') ? feature.geometry.coordinates : null;
-            let detailedCoords = null;
-            if (feature) {
-                if (feature.geometry.type === 'LineString') {
-                    detailedCoords = feature.geometry.coordinates;
-                } else if (feature.geometry.type === 'MultiLineString') {
-                    // Pick longest segment
-                    detailedCoords = feature.geometry.coordinates.reduce((prev, curr) => curr.length > prev.length ? curr : prev, []);
-                }
-            }
+        Object.entries(lines).forEach(([lineCode, line]) => {
+            const coordinates = line.stations.map(s => [s.lng, s.lat]);
+            const detailedCoords = line.detailedPath; // Already processed by NetworkModel
 
             this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates, detailedCoords);
             this.activeTrains.set(lineCode, []);
@@ -107,7 +95,8 @@ export class SimulationEngine {
     }
 
     getStationIndex(lineCode, stationCode) {
-        const line = MRT_LINES[lineCode];
+        const lines = NetworkModel.getAllLines();
+        const line = lines[lineCode];
         return line.stations.findIndex(s => s.code === stationCode);
     }
 
@@ -169,7 +158,8 @@ export class SimulationEngine {
 
     updateTrains(timeInMinutes) {
         if (this.lastUpdateTime === -1 || Math.abs(timeInMinutes - this.lastUpdateTime) > 5) {
-            Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+            const lines = NetworkModel.getAllLines();
+            Object.keys(lines).forEach((lineCode) => {
                 const schedule = LINE_SCHEDULES[lineCode];
                 if (schedule && timeInMinutes >= schedule.startTime && timeInMinutes <= schedule.endTime) {
                     this.resetLineState(lineCode, timeInMinutes, schedule);
@@ -181,7 +171,8 @@ export class SimulationEngine {
             return;
         }
 
-        Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+        const lines = NetworkModel.getAllLines();
+        Object.entries(lines).forEach(([lineCode, line]) => {
             const schedule = LINE_SCHEDULES[lineCode];
             if (!schedule) return;
 
@@ -284,7 +275,8 @@ export class SimulationEngine {
 
         const allPositions = [];
 
-        Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+        const lines = NetworkModel.getAllLines();
+        Object.entries(lines).forEach(([lineCode, line]) => {
             const trains = this.activeTrains.get(lineCode);
             if (!trains) return;
 
@@ -473,7 +465,8 @@ export class SimulationEngine {
         let trainsInMotion = 0;
         const trainsByLine = {};
 
-        Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+        const lines = NetworkModel.getAllLines();
+        Object.entries(lines).forEach(([lineCode, line]) => {
             const schedule = LINE_SCHEDULES[lineCode];
             if (!schedule) return;
 
