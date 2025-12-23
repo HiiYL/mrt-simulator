@@ -14,6 +14,7 @@ export const LINE_SCHEDULES = {
         peakFrequency: 2,         // minutes during peak
         offPeakFrequency: 5,      // minutes during off-peak
         maxFleet: 99,             // NS+EW share 198 trains, split evenly
+        depots: ['NS1', 'NS7', 'NS17', 'NS28'], // Jurong East, Kranji, Bishan, Marina South Pier
     },
     EW: {
         name: 'East-West Line',
@@ -25,6 +26,7 @@ export const LINE_SCHEDULES = {
         peakFrequency: 2,
         offPeakFrequency: 5,
         maxFleet: 99,             // NS+EW share 198 trains, split evenly
+        depots: ['EW1', 'EW12', 'EW24', 'EW33'], // Pasir Ris, Bugis, Jurong East, Tuas Link
     },
     NE: {
         name: 'North-East Line',
@@ -36,6 +38,7 @@ export const LINE_SCHEDULES = {
         peakFrequency: 2,
         offPeakFrequency: 5,
         maxFleet: 49,             // Official fleet: 49 trains
+        depots: ['NE1', 'NE6', 'NE16', 'NE17'], // Harbourfront, Dhoby Ghaut, Sengkang, Punggol
     },
     CC: {
         name: 'Circle Line',
@@ -47,6 +50,7 @@ export const LINE_SCHEDULES = {
         peakFrequency: 2,
         offPeakFrequency: 4,
         maxFleet: 64,             // Official fleet: 64 trains
+        depots: ['CC1', 'CC11', 'CC29'], // Dhoby Ghaut, Tai Seng (Kim Chuan), Harbourfront
     },
     DT: {
         name: 'Downtown Line',
@@ -58,6 +62,7 @@ export const LINE_SCHEDULES = {
         peakFrequency: 2,
         offPeakFrequency: 5,
         maxFleet: 92,             // Official fleet: 92 trains
+        depots: ['DT1', 'DT27', 'DT35'], // Bukit Panjang (Gali Batu), Ubi (Kim Chuan), Expo
     },
     TE: {
         name: 'Thomson-East Coast Line',
@@ -69,6 +74,7 @@ export const LINE_SCHEDULES = {
         peakFrequency: 3,         // TEL slightly less frequent
         offPeakFrequency: 6,
         maxFleet: 91,             // Official fleet: 91 trains
+        depots: ['TE1', 'TE9', 'TE29'], // Woodlands North, Caldecott/Mandai, Bayshore
     },
     CG: {
         name: 'Changi Airport Line',
@@ -80,6 +86,7 @@ export const LINE_SCHEDULES = {
         peakFrequency: 8,         // 7-9 minutes during peak
         offPeakFrequency: 12,     // 12-15 minutes during off-peak
         maxFleet: 6,              // Small shuttle service
+        depots: ['CG2'],          // Changi Airport
     },
     // LRT Systems - loop-based, unidirectional on weekends
     BP: {
@@ -94,6 +101,7 @@ export const LINE_SCHEDULES = {
         maxFleet: 32,             // Official fleet: 32 trains
         isLoop: true,             // LRT operates in a loop, not back-and-forth
         weekendUnidirectional: true, // Only one direction on weekends/holidays
+        depots: ['BP1'],          // Choa Chu Kang
     },
     SK: {
         name: 'Sengkang LRT',
@@ -107,6 +115,7 @@ export const LINE_SCHEDULES = {
         maxFleet: 20,             // Sengkang-Punggol LRT share ~40 trains
         isLoop: true,             // LRT operates in a loop, not back-and-forth
         weekendUnidirectional: true, // Only one direction on weekends/holidays
+        depots: ['STC'],          // Sengkang
     },
     PG: {
         name: 'Punggol LRT',
@@ -120,6 +129,7 @@ export const LINE_SCHEDULES = {
         maxFleet: 20,             // Sengkang-Punggol LRT share ~40 trains
         isLoop: true,             // LRT operates in a loop, not back-and-forth
         weekendUnidirectional: true, // Only one direction on weekends/holidays
+        depots: ['PTC'],          // Punggol
     }
 };
 

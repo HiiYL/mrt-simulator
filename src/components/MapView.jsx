@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateRouteGeoJSON, generateStationsGeoJSON, MRT_LINES } from '../data/mrt-routes.js';
+import { DEPOTS } from '../data/depots.js';
 
 // Singapore bounds - restrict map to Singapore only
 const SINGAPORE_BOUNDS = [
@@ -86,6 +87,9 @@ function MapViewComponent({ trains }) {
 
             // Add MRT stations
             addMRTStations(map);
+
+            // Add Depots
+            addDepots(map);
 
             // Add trains source (will be updated dynamically)
             map.addSource('trains', {
@@ -371,3 +375,94 @@ function addMRTStations(map) {
 }
 
 export default MapView;
+
+function addDepots(map) {
+    const depotFeatures = Object.values(DEPOTS).map(depot => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: depot.coordinates },
+        properties: { name: depot.name, capacity: depot.capacity }
+    }));
+
+    const connectionFeatures = Object.values(DEPOTS).map(depot => ({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: depot.connection.path },
+        properties: { line: depot.connection.lineCode }
+    }));
+
+    map.addSource('depots', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: depotFeatures }
+    });
+
+    map.addSource('depot-connections', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: connectionFeatures }
+    });
+
+    // Connector tracks
+    map.addLayer({
+        id: 'depot-connector-lines',
+        type: 'line',
+        source: 'depot-connections',
+        layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+        },
+        paint: {
+            'line-color': '#666',
+            'line-width': 2,
+            'line-dasharray': [2, 2],
+            'line-opacity': 0.7
+        }
+    });
+
+    // Depot Markers (Square buildings)
+    map.addLayer({
+        id: 'depot-markers',
+        type: 'circle',
+        source: 'depots',
+        paint: {
+            'circle-radius': 6,
+            'circle-color': '#444',
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#888'
+        }
+    });
+
+    // Depot Labels
+    map.addLayer({
+        id: 'depot-labels',
+        type: 'symbol',
+        source: 'depots',
+        minzoom: 11,
+        layout: {
+            'text-field': 'D', // Simple icon
+            'text-font': ['Open Sans Regular'], // Ensure font exists or use sans-serif default? MapLibre default usually Open Sans
+            'text-size': 10,
+            'text-offset': [0, 0]
+        },
+        paint: {
+            'text-color': '#fff'
+        }
+    });
+
+    // Depot Name Labels (Zoomed in)
+    map.addLayer({
+        id: 'depot-names',
+        type: 'symbol',
+        source: 'depots',
+        minzoom: 13,
+        layout: {
+            'text-field': ['get', 'name'],
+            'text-font': ['Open Sans Regular'],
+            'text-size': 10,
+            'text-offset': [0, 1.5], // Below marker
+            'text-anchor': 'top'
+        },
+        paint: {
+            'text-color': '#aaa',
+            'text-halo-color': 'rgba(0,0,0,0.8)',
+            'text-halo-width': 1
+        }
+    });
+}

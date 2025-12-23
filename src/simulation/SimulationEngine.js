@@ -3,6 +3,7 @@ import { MRT_LINES, getAllLineCodes } from '../data/mrt-routes.js';
 import { LINE_SCHEDULES, getLineFrequency, getDwellTime, getOperatingStatus, getFrequency, isPeakHour } from '../data/schedule.js';
 import { RouteInterpolator } from './RouteInterpolator.js';
 import { INTER_STATION_TIMES } from '../data/travel-times.js';
+import { DEPOTS, getDepotsForLine } from '../data/depots.js';
 
 // Singleton instance
 let engineInstance = null;
@@ -23,6 +24,12 @@ export class SimulationEngine {
     constructor() {
         this.routeInterpolators = {};
 
+        // Stateful train tracking
+        // Map<lineCode, Array<TrainObject>>
+        this.activeTrains = new Map();
+        this.lastUpdateTime = -1;
+        this.lastInjectionTime = new Map(); // Track last spawn time per line
+
         // Initialize route interpolators for each line
         this.initializeRoutes();
     }
@@ -31,68 +38,48 @@ export class SimulationEngine {
         Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
             const coordinates = line.stations.map(s => [s.lng, s.lat]);
             this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates);
+            this.activeTrains.set(lineCode, []);
+            this.lastInjectionTime.set(lineCode, -999);
         });
     }
 
-    // Trapezoidal motion profile for realistic MRT movement
-    // This models: acceleration (20%), constant cruise speed (60%), deceleration (20%)
-    // t: linear time progress (0 to 1)
-    // Returns: position progress (0 to 1) with realistic motion curve
+    // Trapezoidal motion profile
     trapezoidalMotion(t) {
-        const accelPhase = 0.2;   // 20% of journey for acceleration
-        const cruisePhase = 0.6;  // 60% of journey at constant speed
-        const decelPhase = 0.2;   // 20% of journey for deceleration
+        const accelPhase = 0.2;
+        const cruisePhase = 0.6;
+        const decelPhase = 0.2;
 
-        // Normalized time boundaries
         const t1 = accelPhase;
         const t2 = accelPhase + cruisePhase;
 
         if (t < t1) {
-            // Acceleration phase: quadratic ease-in (constant acceleration)
             const localT = t / accelPhase;
-            return 0.1 * localT * localT; // Position after accel = 0.1 (10% of distance)
+            return 0.1 * localT * localT;
         } else if (t < t2) {
-            // Cruise phase: linear motion at constant velocity
             const localT = (t - t1) / cruisePhase;
-            return 0.1 + 0.8 * localT; // Covers 80% of distance at constant speed
+            return 0.1 + 0.8 * localT;
         } else {
-            // Deceleration phase: quadratic ease-out (constant deceleration)
             const localT = (t - t2) / decelPhase;
-            return 0.9 + 0.1 * (2 * localT - localT * localT); // Final 10% of distance
+            return 0.9 + 0.1 * (2 * localT - localT * localT);
         }
     }
 
-    // Get speed phase for display (0 = stopped/slow, 100 = full speed)
     getSpeedPhase(t) {
-        if (t < 0.2) {
-            // Accelerating: 0 -> 100
-            return Math.round((t / 0.2) * 100);
-        } else if (t < 0.8) {
-            // Cruising at full speed
-            return 100;
-        } else {
-            // Decelerating: 100 -> 0
-            return Math.round(((1 - t) / 0.2) * 100);
-        }
+        if (t < 0.2) return Math.round((t / 0.2) * 100);
+        else if (t < 0.8) return 100;
+        else return Math.round(((1 - t) / 0.2) * 100);
     }
 
-
-    // Get per-segment travel times for a line (in minutes)
     getSegmentTravelTimes(lineCode) {
-        // Map line codes to travel time keys (handle CG which is part of EW)
         const timeKey = lineCode === 'CG' ? 'CG' : lineCode;
         const times = INTER_STATION_TIMES[timeKey];
-
         if (!times) {
-            // Fallback to 2 minutes per segment
             const stationCount = this.routeInterpolators[lineCode]?.getStationCount() || 10;
             return Array(stationCount - 1).fill(2);
         }
-
         return times;
     }
 
-    // Calculate total journey time for a line (sum of all segments + dwell times)
     getTotalJourneyTime(lineCode, dwellTimeMinutes) {
         const times = this.getSegmentTravelTimes(lineCode);
         const totalTravel = times.reduce((sum, t) => sum + t, 0);
@@ -101,178 +88,437 @@ export class SimulationEngine {
         return totalTravel + totalDwell;
     }
 
-    // Calculate all train positions at a given time (in minutes from midnight)
-    getTrainPositions(timeInMinutes) {
+    getStationIndex(lineCode, stationCode) {
+        const line = MRT_LINES[lineCode];
+        return line.stations.findIndex(s => s.code === stationCode);
+    }
+
+    // Time from start of line to arrival at stationIndex
+    getTimeToStation(lineCode, stationIndex, dwellTimeMinutes) {
+        const segmentTimes = this.getSegmentTravelTimes(lineCode);
+        let time = 0;
+        for (let i = 0; i < stationIndex; i++) {
+            // Dwell at station i
+            if (i > 0) time += dwellTimeMinutes;
+            // Travel i -> i+1
+            time += (segmentTimes[i] || 2);
+        }
+        return time;
+    }
+
+    // --- Stateful Logic ---
+
+    generateTrainId(lineCode, index) {
+        return `${lineCode}-${Date.now()}-${index}`;
+    }
+
+    resetLineState(lineCode, timeInMinutes, schedule) {
         const trains = [];
+
+        const dwellTimeMinutes = getDwellTime(lineCode) / 60;
+        const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
+        const frequency = getLineFrequency(lineCode, timeInMinutes);
+
+        const neededTrains = Math.max(1, Math.ceil(journeyTime / frequency));
+        const maxFleet = schedule.maxFleet || neededTrains;
+        const targetCount = Math.min(neededTrains, Math.floor(maxFleet * 0.9));
+
+        for (let i = 0; i < targetCount; i++) {
+            trains.push({
+                id: this.generateTrainId(lineCode, `F${i}`),
+                line: lineCode,
+                direction: 'forward',
+                entryTime: timeInMinutes - (i * frequency),
+                state: 'RUNNING',
+                isAtStation: false,
+                wantsToRetire: false
+            });
+
+            trains.push({
+                id: this.generateTrainId(lineCode, `R${i}`),
+                line: lineCode,
+                direction: 'reverse',
+                entryTime: timeInMinutes - (i * frequency) - (frequency / 2),
+                state: 'RUNNING',
+                isAtStation: false,
+                wantsToRetire: false
+            });
+        }
+
+        this.activeTrains.set(lineCode, trains);
+        this.lastInjectionTime.set(lineCode, timeInMinutes);
+    }
+
+    updateTrains(timeInMinutes) {
+        if (this.lastUpdateTime === -1 || Math.abs(timeInMinutes - this.lastUpdateTime) > 5) {
+            Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+                const schedule = LINE_SCHEDULES[lineCode];
+                if (schedule && timeInMinutes >= schedule.startTime && timeInMinutes <= schedule.endTime) {
+                    this.resetLineState(lineCode, timeInMinutes, schedule);
+                } else {
+                    this.activeTrains.set(lineCode, []);
+                }
+            });
+            this.lastUpdateTime = timeInMinutes;
+            return;
+        }
 
         Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
             const schedule = LINE_SCHEDULES[lineCode];
             if (!schedule) return;
 
-            // Check if line is operating at this time
             if (timeInMinutes < schedule.startTime || timeInMinutes > schedule.endTime) {
+                this.activeTrains.set(lineCode, []);
                 return;
             }
 
-            const interpolator = this.routeInterpolators[lineCode];
-            const stationCount = interpolator.getStationCount();
+            let trains = this.activeTrains.get(lineCode) || [];
 
-            // Get line-specific timings
             const dwellTimeMinutes = getDwellTime(lineCode) / 60;
-            const segmentTimes = this.getSegmentTravelTimes(lineCode);
+            const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
             const frequency = getLineFrequency(lineCode, timeInMinutes);
 
-            // Total journey time using per-segment times
-            const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
+            const neededPerDir = Math.max(1, Math.ceil(journeyTime / frequency));
+            const maxFleet = schedule.maxFleet || (neededPerDir * 2);
+            const targetTotal = Math.min(neededPerDir * 2, Math.floor(maxFleet * 0.9));
+            const targetPerDir = Math.floor(targetTotal / 2);
 
-            // Calculate how many trains should be on the line at any time
-            // This is capped by the actual fleet size
-            const neededTrains = Math.max(1, Math.ceil(journeyTime / frequency));
-            const maxFleet = schedule.maxFleet || neededTrains; // Use official fleet cap if available
-            const trainsOnLine = Math.min(neededTrains, Math.floor(maxFleet * 0.85)); // ~85% fleet in service
+            // Active includes RUNNING and INJECTING and WITHDRAWING
+            // But for counting "Service Capacity", we mostly care about RUNNING+INJECTING?
+            // Actually, if we are withdrawing, we are removing capacity.
+            // Target applies to Service trains.
+            const fwdTrains = trains.filter(t => t.direction === 'forward' && (t.state === 'RUNNING' || t.state === 'INJECTING'));
+            const revTrains = trains.filter(t => t.direction === 'reverse' && (t.state === 'RUNNING' || t.state === 'INJECTING'));
 
-            // Time elapsed since line started operating
-            const elapsedFromStart = timeInMinutes - schedule.startTime;
+            const injectionCooldown = 2;
+            const lastInj = this.lastInjectionTime.get(lineCode) || -999;
+            const canInject = (timeInMinutes - lastInj) >= injectionCooldown;
 
-            // Generate trains for forward direction
-            for (let i = 0; i < trainsOnLine; i++) {
-                const trainOffset = i * frequency;
-
-                // Calculate elapsed time in cycle for this train
-                const elapsedInCycle = (elapsedFromStart + trainOffset) % journeyTime;
-
-                // Calculate position and dwell state
-                const positionData = this.calculatePositionWithDwell(
-                    interpolator,
-                    line,
-                    elapsedInCycle,
-                    stationCount,
-                    segmentTimes,
-                    dwellTimeMinutes,
-                    false // forward direction
-                );
-
-                if (positionData) {
-                    trains.push({
-                        id: `${lineCode}-F-${i}`,
-                        line: lineCode,
-                        color: line.color,
-                        lineName: line.name,
-                        direction: 'forward',
-                        isAtStation: positionData.isAtStation,
-                        stationIndex: positionData.stationIndex,
-                        stationName: positionData.stationName,
-                        ...positionData.position
-                    });
-                }
+            if (fwdTrains.length < targetPerDir && canInject) {
+                this.injectRealTrain(lineCode, 'forward', timeInMinutes);
+                this.lastInjectionTime.set(lineCode, timeInMinutes);
+            }
+            else if (revTrains.length < targetPerDir && canInject) {
+                this.injectRealTrain(lineCode, 'reverse', timeInMinutes);
+                this.lastInjectionTime.set(lineCode, timeInMinutes);
             }
 
-            // Generate trains for reverse direction (offset by half frequency)
-            for (let i = 0; i < trainsOnLine; i++) {
-                const trainOffset = i * frequency + (frequency / 2);
-                const elapsedInCycle = (elapsedFromStart + trainOffset) % journeyTime;
-
-                const positionData = this.calculatePositionWithDwell(
-                    interpolator,
-                    line,
-                    elapsedInCycle,
-                    stationCount,
-                    segmentTimes,
-                    dwellTimeMinutes,
-                    true // reverse direction
-                );
-
-                if (positionData) {
-                    // Flip bearing for reverse direction
-                    positionData.position.bearing = (positionData.position.bearing + 180) % 360;
-
-                    trains.push({
-                        id: `${lineCode}-R-${i}`,
-                        line: lineCode,
-                        color: line.color,
-                        lineName: line.name,
-                        direction: 'reverse',
-                        isAtStation: positionData.isAtStation,
-                        stationIndex: positionData.stationIndex,
-                        stationName: positionData.stationName,
-                        ...positionData.position
-                    });
-                }
+            if (fwdTrains.length > targetPerDir) {
+                this.retireTrain(fwdTrains);
+            }
+            if (revTrains.length > targetPerDir) {
+                this.retireTrain(revTrains);
             }
         });
 
-        return trains;
+        this.lastUpdateTime = timeInMinutes;
     }
 
-    // Calculate position with per-segment travel times and realistic movement
+    injectRealTrain(lineCode, direction, currentTime) {
+        const trains = this.activeTrains.get(lineCode);
+        const depots = getDepotsForLine(lineCode);
+
+        const depot = depots.length > 0 ? depots[Math.floor(Math.random() * depots.length)] : null;
+
+        if (depot && depot.connection.lineCode === lineCode) {
+            const idSuffix = Math.random().toString(36).substr(2, 5);
+            trains.push({
+                id: this.generateTrainId(lineCode, `${direction}-${idSuffix}`),
+                line: lineCode,
+                direction: direction,
+                state: 'INJECTING',
+                depotId: Object.keys(DEPOTS).find(key => DEPOTS[key] === depot),
+                connectionStart: currentTime,
+                connectionPath: depot.connection.path,
+                targetStation: depot.connection.stationCode,
+                isAtStation: false,
+                wantsToRetire: false
+            });
+        } else {
+            this.injectTrain(lineCode, direction, currentTime, null);
+        }
+    }
+
+    injectTrain(lineCode, direction, currentTime) {
+        const trains = this.activeTrains.get(lineCode);
+        const idSuffix = Math.random().toString(36).substr(2, 5);
+        trains.push({
+            id: this.generateTrainId(lineCode, `${direction}-${idSuffix}`),
+            line: lineCode,
+            direction: direction,
+            entryTime: currentTime,
+            state: 'RUNNING',
+            isAtStation: false,
+            wantsToRetire: false
+        });
+    }
+
+    retireTrain(candidateTrains) {
+        // Find a running train that isn't already marked for retirement
+        const target = candidateTrains.find(t => t.state === 'RUNNING' && !t.wantsToRetire);
+        if (target) {
+            target.wantsToRetire = true;
+        }
+    }
+
+    getTrainPositions(timeInMinutes) {
+        this.updateTrains(timeInMinutes);
+
+        const allPositions = [];
+
+        Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+            const trains = this.activeTrains.get(lineCode);
+            if (!trains) return;
+
+            const schedule = LINE_SCHEDULES[lineCode];
+            const dwellTimeMinutes = getDwellTime(lineCode) / 60;
+            const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
+            const interpolator = this.routeInterpolators[lineCode];
+            const stationCount = interpolator.getStationCount();
+            const segmentTimes = this.getSegmentTravelTimes(lineCode);
+
+            const activeTrainList = [];
+
+            trains.forEach(train => {
+                // handle INJECTING state
+                if (train.state === 'INJECTING') {
+                    const injectDuration = 2; // 2 minutes to travel from depot
+                    const progress = (timeInMinutes - train.connectionStart) / injectDuration;
+
+                    if (progress >= 1) {
+                        train.state = 'RUNNING';
+
+                        const stationIndex = this.getStationIndex(lineCode, train.targetStation);
+                        const isReverse = train.direction === 'reverse';
+                        let timeOffset = 0;
+                        if (!isReverse) {
+                            timeOffset = this.getTimeToStation(lineCode, stationIndex, dwellTimeMinutes);
+                        } else {
+                            timeOffset = journeyTime - this.getTimeToStation(lineCode, stationIndex, dwellTimeMinutes);
+                        }
+
+                        train.entryTime = timeInMinutes - timeOffset;
+                    } else {
+                        const path = train.connectionPath;
+                        const totalPoints = path.length - 1;
+                        const floatIdx = progress * totalPoints;
+                        const idx = Math.floor(floatIdx);
+                        const subT = floatIdx - idx;
+
+                        const p1 = path[idx];
+                        const p2 = path[Math.min(idx + 1, totalPoints)];
+
+                        const lng = p1[0] + (p2[0] - p1[0]) * subT;
+                        const lat = p1[1] + (p2[1] - p1[1]) * subT;
+
+                        allPositions.push({
+                            id: train.id,
+                            line: lineCode,
+                            color: '#555',
+                            lineName: line.name,
+                            direction: train.direction,
+                            isAtStation: false,
+                            stationIndex: -1,
+                            stationName: 'Leaving Depot',
+                            speed: 40,
+                            lng, lat, bearing: 0
+                        });
+                        activeTrainList.push(train);
+                        return;
+                    }
+                }
+
+                // handle WITHDRAWING state
+                if (train.state === 'WITHDRAWING') {
+                    const withdrawDuration = 2;
+                    const progress = (timeInMinutes - train.withdrawalStart) / withdrawDuration;
+
+                    if (progress >= 1) {
+                        // Reached depot, remove from active list
+                        return; // Despawn
+                    } else {
+                        const path = train.connectionPath;
+                        const totalPoints = path.length - 1;
+
+                        // Inverse progress
+                        const pathProgress = 1.0 - progress;
+
+                        const floatIdx = pathProgress * totalPoints;
+                        // Clamp for safety
+                        const safeFloat = Math.max(0, Math.min(totalPoints, floatIdx));
+                        const idx = Math.floor(safeFloat);
+                        const subT = safeFloat - idx;
+
+                        const p1 = path[idx];
+                        const p2 = path[Math.min(idx + 1, totalPoints)];
+
+                        const lng = p1[0] + (p2[0] - p1[0]) * subT;
+                        const lat = p1[1] + (p2[1] - p1[1]) * subT;
+
+                        allPositions.push({
+                            id: train.id,
+                            line: lineCode,
+                            color: '#555',
+                            lineName: line.name,
+                            direction: train.direction,
+                            isAtStation: false,
+                            stationIndex: -1,
+                            stationName: 'Returning to Depot',
+                            speed: 40,
+                            lng, lat, bearing: 0
+                        });
+                        activeTrainList.push(train);
+                        return;
+                    }
+                }
+
+                if (train.state === 'RUNNING' || train.state === 'DESPAWNING') {
+                    const elapsedTotal = timeInMinutes - train.entryTime;
+                    if (elapsedTotal < 0) {
+                        activeTrainList.push(train);
+                        return;
+                    }
+
+                    const loopCount = Math.floor(elapsedTotal / journeyTime);
+                    const elapsedInCycle = elapsedTotal % journeyTime;
+
+                    if (train.state === 'DESPAWNING' && loopCount >= 1) {
+                        return;
+                    }
+
+                    const isReverse = train.direction === 'reverse';
+                    const positionData = this.calculatePositionWithDwell(
+                        interpolator,
+                        line,
+                        elapsedInCycle,
+                        stationCount,
+                        segmentTimes,
+                        dwellTimeMinutes,
+                        isReverse
+                    );
+
+                    if (positionData) {
+                        train.isAtStation = positionData.isAtStation;
+
+                        // Check for Withdrawal Opportunity
+                        if (train.wantsToRetire && positionData.isAtStation) {
+                            const currentStationCode = line.stations[positionData.stationIndex]?.code;
+
+                            const depot = Object.values(DEPOTS).find(d =>
+                                d.servesLines.includes(lineCode) &&
+                                d.connection.stationCode === currentStationCode &&
+                                d.connection.lineCode === lineCode
+                            );
+
+                            if (depot) {
+                                train.state = 'WITHDRAWING';
+                                train.withdrawalStart = timeInMinutes;
+                                train.connectionPath = depot.connection.path;
+                                train.wantsToRetire = false;
+
+                                activeTrainList.push(train);
+                                return;
+                            }
+                        }
+
+                        if (isReverse) {
+                            positionData.position.bearing = (positionData.position.bearing + 180) % 360;
+                        }
+
+                        allPositions.push({
+                            id: train.id,
+                            line: lineCode,
+                            color: line.color,
+                            lineName: line.name,
+                            direction: train.direction,
+                            stationName: positionData.stationName,
+                            ...positionData,
+                            ...positionData.position
+                        });
+                        activeTrainList.push(train);
+                    } else {
+                        activeTrainList.push(train);
+                    }
+                }
+            });
+
+            this.activeTrains.set(lineCode, activeTrainList);
+        });
+
+        return allPositions;
+    }
+
+    getStatistics(timeInMinutes) {
+        const activeLines = [];
+        let totalTrains = 0;
+        let trainsAtStation = 0;
+        let trainsInMotion = 0;
+        const trainsByLine = {};
+
+        Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+            const schedule = LINE_SCHEDULES[lineCode];
+            if (!schedule) return;
+
+            if (timeInMinutes >= schedule.startTime && timeInMinutes <= schedule.endTime) {
+                activeLines.push(lineCode);
+
+                const trains = this.activeTrains.get(lineCode) || [];
+                const count = trains.length;
+
+                trains.forEach(t => {
+                    if (t.isAtStation) trainsAtStation++;
+                    else trainsInMotion++;
+                });
+
+                trainsByLine[lineCode] = count;
+                totalTrains += count;
+            }
+        });
+
+        return {
+            totalTrains: totalTrains,
+            trainsAtStation: trainsAtStation,
+            trainsInMotion: trainsInMotion,
+            trainsByLine: trainsByLine,
+            activeLines: activeLines.length,
+            isPeakHour: isPeakHour(timeInMinutes),
+            operatingStatus: getOperatingStatus(timeInMinutes),
+            frequency: isPeakHour(timeInMinutes) ? 2 : 5
+        };
+    }
+
     calculatePositionWithDwell(interpolator, line, elapsed, stationCount, segmentTimes, dwellTime, reverse) {
         const segments = stationCount - 1;
-
-        // State tracking
         let currentStation = 0;
         let isAtStation = false;
         let timeRemaining = elapsed;
 
-        // For reverse direction, we traverse segments in reverse order
         const getSegmentTime = (segIndex) => {
-            if (reverse) {
-                // Reverse: segment 0 is the last segment in segmentTimes
-                return segmentTimes[segments - 1 - segIndex] || 2;
-            }
+            if (reverse) return segmentTimes[segments - 1 - segIndex] || 2;
             return segmentTimes[segIndex] || 2;
         };
 
-        // Start with dwell at first station
         if (timeRemaining < dwellTime) {
             isAtStation = true;
             currentStation = 0;
         } else {
             timeRemaining -= dwellTime;
-
-            // Walk through each segment with its specific travel time
             for (let seg = 0; seg < segments; seg++) {
                 const thisSegmentTime = getSegmentTime(seg);
-
-                // Travel phase
                 if (timeRemaining < thisSegmentTime) {
-                    // Train is moving between stations
-                    // Linear time progress (0 to 1)
                     const linearProgress = timeRemaining / thisSegmentTime;
-
-                    // Apply trapezoidal motion profile for realistic MRT movement
-                    // 20% acceleration, 60% cruise at constant speed, 20% deceleration
                     const easedProgress = this.trapezoidalMotion(linearProgress);
-
-                    // Determine actual station indices based on direction
                     const fromStationIdx = reverse ? (stationCount - 1 - seg) : seg;
                     const toStationIdx = reverse ? (stationCount - 2 - seg) : (seg + 1);
-
-                    // Use distance-based interpolation between actual station coordinates
                     const actualFrom = reverse ? toStationIdx : fromStationIdx;
                     const actualTo = reverse ? fromStationIdx : toStationIdx;
 
-                    // Get position using proper geographic distance
-                    const position = interpolator.getPositionBetweenStations(
-                        Math.min(actualFrom, actualTo),
-                        Math.max(actualFrom, actualTo),
-                        reverse ? (1 - easedProgress) : easedProgress,
-                        reverse
-                    );
-
-                    // Calculate current speed phase for display
+                    const position = interpolator.getPositionBetweenStations(Math.min(actualFrom, actualTo), Math.max(actualFrom, actualTo), reverse ? (1 - easedProgress) : easedProgress, reverse);
                     const speedPhase = this.getSpeedPhase(linearProgress);
 
-                    return {
-                        position,
-                        isAtStation: false,
-                        stationIndex: fromStationIdx,
-                        stationName: `${line.stations[fromStationIdx]?.code || ''} → ${line.stations[toStationIdx]?.code || ''}`,
-                        speed: speedPhase
-                    };
+                    return { position, isAtStation: false, stationIndex: fromStationIdx, stationName: `${line.stations[fromStationIdx]?.code || ''} → ${line.stations[toStationIdx]?.code || ''}`, speed: speedPhase };
                 }
                 timeRemaining -= thisSegmentTime;
-
-                // Dwell phase at next station
                 if (timeRemaining < dwellTime) {
                     currentStation = seg + 1;
                     isAtStation = true;
@@ -280,65 +526,17 @@ export class SimulationEngine {
                 }
                 timeRemaining -= dwellTime;
             }
-
-            // If we've exhausted all time, train is at final station
             if (!isAtStation && timeRemaining >= 0) {
                 currentStation = segments;
                 isAtStation = true;
             }
         }
-
-        // Get exact station position for dwelling trains
         const actualStation = reverse ? (stationCount - 1 - currentStation) : currentStation;
         const station = line.stations[Math.min(actualStation, stationCount - 1)];
-
-        if (!station) {
-            return null;
-        }
-
+        if (!station) return null;
         if (isAtStation) {
-            // Snap to exact station coordinates
-            return {
-                position: {
-                    lng: station.lng,
-                    lat: station.lat,
-                    bearing: interpolator.getBearingAtStation(currentStation, reverse),
-                    fraction: currentStation / Math.max(1, segments)
-                },
-                isAtStation: true,
-                stationIndex: actualStation,
-                stationName: station.name || station.code
-            };
+            return { position: { lng: station.lng, lat: station.lat, bearing: interpolator.getBearingAtStation(actualStation, reverse) }, isAtStation: true, stationIndex: actualStation, stationName: station.name, speed: 0 };
         }
-
-        // Fallback (shouldn't reach here)
         return null;
-    }
-
-    // Get statistics about current simulation state
-    getStatistics(timeInMinutes) {
-        const trains = this.getTrainPositions(timeInMinutes);
-        const trainsInMotion = trains.filter(t => !t.isAtStation).length;
-        const trainsAtStations = trains.filter(t => t.isAtStation).length;
-        const operatingStatus = getOperatingStatus(timeInMinutes);
-        const frequency = getFrequency(timeInMinutes);
-
-        // Count by line
-        const byLine = {};
-        trains.forEach(train => {
-            byLine[train.line] = (byLine[train.line] || 0) + 1;
-        });
-
-        return {
-            totalTrains: trains.length,
-            trainsInMotion,
-            trainsAtStations,
-            trainsAtStation: trainsAtStations, // Alias for backwards compatibility
-            byLine,
-            trainsByLine: byLine, // Alias for test compatibility
-            isPeakHour: isPeakHour(timeInMinutes),
-            operatingStatus,
-            frequency
-        };
     }
 }
