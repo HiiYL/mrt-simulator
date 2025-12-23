@@ -34,6 +34,49 @@ export class SimulationEngine {
         });
     }
 
+    // Trapezoidal motion profile for realistic MRT movement
+    // This models: acceleration (20%), constant cruise speed (60%), deceleration (20%)
+    // t: linear time progress (0 to 1)
+    // Returns: position progress (0 to 1) with realistic motion curve
+    trapezoidalMotion(t) {
+        const accelPhase = 0.2;   // 20% of journey for acceleration
+        const cruisePhase = 0.6;  // 60% of journey at constant speed
+        const decelPhase = 0.2;   // 20% of journey for deceleration
+
+        // Normalized time boundaries
+        const t1 = accelPhase;
+        const t2 = accelPhase + cruisePhase;
+
+        if (t < t1) {
+            // Acceleration phase: quadratic ease-in (constant acceleration)
+            const localT = t / accelPhase;
+            return 0.1 * localT * localT; // Position after accel = 0.1 (10% of distance)
+        } else if (t < t2) {
+            // Cruise phase: linear motion at constant velocity
+            const localT = (t - t1) / cruisePhase;
+            return 0.1 + 0.8 * localT; // Covers 80% of distance at constant speed
+        } else {
+            // Deceleration phase: quadratic ease-out (constant deceleration)
+            const localT = (t - t2) / decelPhase;
+            return 0.9 + 0.1 * (2 * localT - localT * localT); // Final 10% of distance
+        }
+    }
+
+    // Get speed phase for display (0 = stopped/slow, 100 = full speed)
+    getSpeedPhase(t) {
+        if (t < 0.2) {
+            // Accelerating: 0 -> 100
+            return Math.round((t / 0.2) * 100);
+        } else if (t < 0.8) {
+            // Cruising at full speed
+            return 100;
+        } else {
+            // Decelerating: 100 -> 0
+            return Math.round(((1 - t) / 0.2) * 100);
+        }
+    }
+
+
     // Get per-segment travel times for a line (in minutes)
     getSegmentTravelTimes(lineCode) {
         // Map line codes to travel time keys (handle CG which is part of EW)
@@ -158,7 +201,7 @@ export class SimulationEngine {
         return trains;
     }
 
-    // Calculate position with per-segment travel times and station snapping
+    // Calculate position with per-segment travel times and realistic movement
     calculatePositionWithDwell(interpolator, line, elapsed, stationCount, segmentTimes, dwellTime, reverse) {
         const segments = stationCount - 1;
 
@@ -190,25 +233,38 @@ export class SimulationEngine {
                 // Travel phase
                 if (timeRemaining < thisSegmentTime) {
                     // Train is moving between stations
-                    const segmentProgress = timeRemaining / thisSegmentTime;
+                    // Linear time progress (0 to 1)
+                    const linearProgress = timeRemaining / thisSegmentTime;
 
-                    // Calculate fraction based on cumulative segment distances
-                    // For now use simple segment-based fraction
-                    const overallFraction = (seg + segmentProgress) / segments;
+                    // Apply trapezoidal motion profile for realistic MRT movement
+                    // 20% acceleration, 60% cruise at constant speed, 20% deceleration
+                    const easedProgress = this.trapezoidalMotion(linearProgress);
 
-                    // Get position from interpolator
-                    const fraction = reverse ? (1 - overallFraction) : overallFraction;
-                    const position = interpolator.getPositionAtFraction(fraction);
+                    // Determine actual station indices based on direction
+                    const fromStationIdx = reverse ? (stationCount - 1 - seg) : seg;
+                    const toStationIdx = reverse ? (stationCount - 2 - seg) : (seg + 1);
 
-                    // Determine which stations we're between
-                    const fromStation = reverse ? (stationCount - 1 - seg) : seg;
-                    const toStation = reverse ? (stationCount - 2 - seg) : (seg + 1);
+                    // Use distance-based interpolation between actual station coordinates
+                    const actualFrom = reverse ? toStationIdx : fromStationIdx;
+                    const actualTo = reverse ? fromStationIdx : toStationIdx;
+
+                    // Get position using proper geographic distance
+                    const position = interpolator.getPositionBetweenStations(
+                        Math.min(actualFrom, actualTo),
+                        Math.max(actualFrom, actualTo),
+                        reverse ? (1 - easedProgress) : easedProgress,
+                        reverse
+                    );
+
+                    // Calculate current speed phase for display
+                    const speedPhase = this.getSpeedPhase(linearProgress);
 
                     return {
                         position,
                         isAtStation: false,
-                        stationIndex: fromStation,
-                        stationName: `${line.stations[Math.min(fromStation, stationCount - 1)]?.code || ''} → ${line.stations[Math.min(toStation, stationCount - 1)]?.code || ''}`
+                        stationIndex: fromStationIdx,
+                        stationName: `${line.stations[fromStationIdx]?.code || ''} → ${line.stations[toStationIdx]?.code || ''}`,
+                        speed: speedPhase
                     };
                 }
                 timeRemaining -= thisSegmentTime;

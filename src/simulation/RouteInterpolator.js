@@ -145,6 +145,45 @@ export class RouteInterpolator {
         return this.coordinates.length;
     }
 
+    // Get position between two stations with proper distance-based interpolation
+    // fromStation: the station index the train departed from
+    // toStation: the station index the train is traveling to  
+    // progress: 0 to 1 representing how far along the segment (can be eased)
+    // reverse: if true, the train is traveling in reverse direction
+    getPositionBetweenStations(fromStation, toStation, progress, reverse = false) {
+        const startDist = this.segmentDistances[fromStation];
+        const endDist = this.segmentDistances[toStation];
+        const segmentDist = endDist - startDist;
+
+        // Calculate actual distance along the segment
+        const currentDist = startDist + (segmentDist * progress);
+
+        // Convert to overall fraction of route
+        const fraction = currentDist / this.totalLength;
+
+        // Get position using turf
+        const point = turf.along(this.lineString, currentDist, { units: 'kilometers' });
+
+        // Get bearing
+        const bearing = this.getBearingAtFraction(fraction);
+        const finalBearing = reverse ? (bearing + 180) % 360 : bearing;
+
+        return {
+            lng: point.geometry.coordinates[0],
+            lat: point.geometry.coordinates[1],
+            bearing: finalBearing,
+            fraction
+        };
+    }
+
+    // Get segment distance in km
+    getSegmentDistance(segmentIndex) {
+        if (segmentIndex < 0 || segmentIndex >= this.segmentDistances.length - 1) {
+            return 0;
+        }
+        return this.segmentDistances[segmentIndex + 1] - this.segmentDistances[segmentIndex];
+    }
+
     // Calculate travel time for a specific segment based on line's total duration
     // totalDurationMinutes: Total time for the entire line (e.g. 70 mins)
     // segmentIndex: Index of the segment (0 to stationCount-2)
