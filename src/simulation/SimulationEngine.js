@@ -153,7 +153,8 @@ export class SimulationEngine {
                 entryTime: timeInMinutes - (i * frequency),
                 state: 'RUNNING',
                 isAtStation: false,
-                wantsToRetire: false
+                wantsToRetire: false,
+                totalDelay: 0
             });
 
             trains.push({
@@ -163,7 +164,8 @@ export class SimulationEngine {
                 entryTime: timeInMinutes - (i * frequency) - (frequency / 2),
                 state: 'RUNNING',
                 isAtStation: false,
-                wantsToRetire: false
+                wantsToRetire: false,
+                totalDelay: 0
             });
         }
 
@@ -233,9 +235,72 @@ export class SimulationEngine {
             if (revTrains.length > targetPerDir) {
                 this.retireTrain(revTrains);
             }
+
+            // Apply Safety Spacing (Braking if too close)
+            this.applySafetySpacing(trains);
         });
 
         this.lastUpdateTime = timeInMinutes;
+    }
+
+    // Safety Spacing Logic (Moving Block / CBTC)
+    // Ensures trains maintain safe distance (e.g. 50m)
+    applySafetySpacing(trains) {
+        // Sort by 'effective' progress?
+        // Actually, our trains array is NOT guaranteed to be in order of position.
+        // We know their 'entryTime'. Smaller entryTime = entered earlier = further ahead.
+        // So we sort by entryTime ascending (Oldest first -> furthest along track).
+
+        // Filter by direction first, as they don't interact (different tracks)
+        ['forward', 'reverse'].forEach(dir => {
+            const dirTrains = trains.filter(t => t.direction === dir && (t.state === 'RUNNING' || t.state === 'INJECTING' || t.state === 'WITHDRAWING'));
+            dirTrains.sort((a, b) => a.entryTime - b.entryTime);
+
+            // Iterate: Leader is i, Follower is i+1
+            for (let i = 0; i < dirTrains.length - 1; i++) {
+                const leader = dirTrains[i];
+                const follower = dirTrains[i + 1];
+
+                // Skip if either is not initialized with some position data (though we only calc pos later? No, we need pos to measure safety)
+                // Chicken and Egg: We need position to check distance. But position depends on delay.
+                // Approach: Use PREVIOUS frame's positions? Or calculate 'raw' position then clamp?
+                // Let's use 'virtual time' to check distance.
+
+                // Effective time on track:
+                const timeL = this.lastUpdateTime - leader.entryTime - (leader.totalDelay || 0);
+                const timeF = this.lastUpdateTime - follower.entryTime - (follower.totalDelay || 0);
+
+                // If time difference is huge, they are far apart.
+                // Avg speed approx 80km/h ~ 22m/s ~ 1.3km/min.
+                // 50m safe distance is approx 0.04 minutes (2-3 seconds).
+                // Let's enforce a minimum time gap of 0.1 minutes (6 seconds) for simplicity and robust visual spacing.
+
+                // Minimum gap required.
+                // Standard moving block safety: ~0.5 mins (~30s)
+                let minGap = 0.5;
+
+                // "Station Hold" Logic (Passenger Experience):
+                if (follower.isAtStation) {
+                    // Refined Rule:
+                    // 1. If leader is also at a station (likely the next one) and close (within ~2.5 mins), HOLD.
+                    //    This simulates "Waiting for next train to leave station".
+                    if (leader.isAtStation && (timeL - timeF) < 2.5) {
+                        minGap = 2.5; // Force a large gap to keep waiting
+                    }
+                    // 2. If leader is moving but in the tunnel close by, HOLD to avoid "stopping in tunnel".
+                    else {
+                        minGap = 1.5; // ~90s buffer to clear segment
+                    }
+                }
+
+                if (timeL - timeF < minGap) {
+                    // Follower is too close!
+                    // Increase follower's delay to force the gap.
+                    const neededGap = minGap - (timeL - timeF);
+                    follower.totalDelay = (follower.totalDelay || 0) + neededGap;
+                }
+            }
+        });
     }
 
     injectRealTrain(lineCode, direction, currentTime) {
@@ -256,7 +321,8 @@ export class SimulationEngine {
                 connectionPath: depot.connection.path,
                 targetStation: depot.connection.stationCode,
                 isAtStation: false,
-                wantsToRetire: false
+                wantsToRetire: false,
+                totalDelay: 0
             });
         } else {
             this.injectTrain(lineCode, direction, currentTime, null);
@@ -273,7 +339,8 @@ export class SimulationEngine {
             entryTime: currentTime,
             state: 'RUNNING',
             isAtStation: false,
-            wantsToRetire: false
+            wantsToRetire: false,
+            totalDelay: 0
         });
     }
 
@@ -398,7 +465,8 @@ export class SimulationEngine {
                 }
 
                 if (train.state === 'RUNNING' || train.state === 'DESPAWNING') {
-                    const elapsedTotal = timeInMinutes - train.entryTime;
+                    // Apply aggregated delay to effective elapsed time
+                    const elapsedTotal = timeInMinutes - train.entryTime - (train.totalDelay || 0);
                     if (elapsedTotal < 0) {
                         activeTrainList.push(train);
                         return;

@@ -87,6 +87,22 @@ describe('SimulationEngine', () => {
         });
     });
 
+    it('should maintain safety distance (delay) between close trains', () => {
+        // Mock two trains on the same line close to each other
+        engine.activeTrains.set('NS', [
+            { id: 't1', line: 'NS', direction: 'forward', entryTime: 100, state: 'RUNNING', totalDelay: 0, isAtStation: true }, // Leader at Next Station
+            { id: 't2', line: 'NS', direction: 'forward', entryTime: 101.5, state: 'RUNNING', totalDelay: 0, isAtStation: true } // Follower at Previous Station (Gap = 1.5)
+        ]);
+        engine.lastUpdateTime = 200;
+
+        engine.applySafetySpacing(engine.activeTrains.get('NS'));
+
+        const t2 = engine.activeTrains.get('NS')[1];
+        // Gap (1.5) < Station Hold Gap (2.5) because leader is ALSO at station
+        // Should hold.
+        // Expected delay = 2.5 - 1.5 = 1.0
+        expect(t2.totalDelay).toBeCloseTo(1.0, 1);
+    });
     describe('getStatistics', () => {
         it('should return statistics object with dwell information', () => {
             const stats = engine.getStatistics(480);
