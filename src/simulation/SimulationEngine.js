@@ -1,6 +1,6 @@
 
 // Simulation Engine - Manages train spawning and movement with per-station travel times
-import { LINE_SCHEDULES, getDwellTime, getLineFrequency, isPeakHour, getOperatingStatus } from '../data/schedule.js';
+import { LINE_SCHEDULES, getDwellTime, getLineFrequency, isPeakHour, getOperatingStatus, isLineDeploying, isLineDraining, getLineDeploymentWindow } from '../data/schedule.js';
 import { DEPOTS, getDepotsForLine } from '../data/depots.js';
 import { RouteInterpolator } from './RouteInterpolator.js';
 import { NetworkModel } from '../data/NetworkModel.js';
@@ -178,8 +178,25 @@ export class SimulationEngine {
             const lines = NetworkModel.getAllLines();
             Object.keys(lines).forEach((lineCode) => {
                 const schedule = LINE_SCHEDULES[lineCode];
-                if (schedule && timeInMinutes >= schedule.startTime && timeInMinutes <= schedule.endTime) {
-                    this.resetLineState(lineCode, timeInMinutes, schedule);
+                const deployWindow = getLineDeploymentWindow(lineCode);
+                
+                if (schedule && deployWindow) {
+                    // During service hours - full operation
+                    if (timeInMinutes >= schedule.startTime && timeInMinutes <= schedule.endTime) {
+                        this.resetLineState(lineCode, timeInMinutes, schedule);
+                    }
+                    // During deployment phase - partial fleet
+                    else if (timeInMinutes >= deployWindow.deployStart && timeInMinutes < schedule.startTime) {
+                        this.resetLineStateForDeployment(lineCode, timeInMinutes, schedule);
+                    }
+                    // During draining phase - keep existing trains but mark for retirement
+                    else if (timeInMinutes > schedule.endTime && timeInMinutes <= deployWindow.drainEnd) {
+                        this.startDrainingLine(lineCode, timeInMinutes);
+                    }
+                    // Outside all operating windows
+                    else {
+                        this.activeTrains.set(lineCode, []);
+                    }
                 } else {
                     this.activeTrains.set(lineCode, []);
                 }
@@ -193,7 +210,16 @@ export class SimulationEngine {
             const schedule = LINE_SCHEDULES[lineCode];
             if (!schedule) return;
 
-            if (timeInMinutes < schedule.startTime || timeInMinutes > schedule.endTime) {
+            const deployWindow = getLineDeploymentWindow(lineCode);
+            if (!deployWindow) return;
+
+            // Handle different phases of operation
+            const isDeploying = isLineDeploying(lineCode, timeInMinutes);
+            const isDraining = isLineDraining(lineCode, timeInMinutes);
+            const isOperating = timeInMinutes >= schedule.startTime && timeInMinutes <= schedule.endTime;
+
+            // Outside all operating windows - clear trains
+            if (!isDeploying && !isOperating && !isDraining) {
                 this.activeTrains.set(lineCode, []);
                 return;
             }
@@ -209,10 +235,6 @@ export class SimulationEngine {
             const targetTotal = Math.min(neededPerDir * 2, Math.floor(maxFleet * 0.9));
             const targetPerDir = Math.floor(targetTotal / 2);
 
-            // Active includes RUNNING and INJECTING and WITHDRAWING
-            // But for counting "Service Capacity", we mostly care about RUNNING+INJECTING?
-            // Actually, if we are withdrawing, we are removing capacity.
-            // Target applies to Service trains.
             const fwdTrains = trains.filter(t => t.direction === 'forward' && (t.state === 'RUNNING' || t.state === 'INJECTING'));
             const revTrains = trains.filter(t => t.direction === 'reverse' && (t.state === 'RUNNING' || t.state === 'INJECTING'));
 
@@ -220,20 +242,44 @@ export class SimulationEngine {
             const lastInj = this.lastInjectionTime.get(lineCode) || -999;
             const canInject = (timeInMinutes - lastInj) >= injectionCooldown;
 
-            if (fwdTrains.length < targetPerDir && canInject) {
-                this.injectRealTrain(lineCode, 'forward', timeInMinutes);
-                this.lastInjectionTime.set(lineCode, timeInMinutes);
+            // DEPLOYMENT PHASE: Gradually inject trains before service starts
+            if (isDeploying) {
+                const deployProgress = (timeInMinutes - deployWindow.deployStart) / (schedule.startTime - deployWindow.deployStart);
+                const targetDeploy = Math.floor(targetPerDir * deployProgress);
+                
+                if (fwdTrains.length < targetDeploy && canInject) {
+                    this.injectRealTrain(lineCode, 'forward', timeInMinutes);
+                    this.lastInjectionTime.set(lineCode, timeInMinutes);
+                } else if (revTrains.length < targetDeploy && canInject) {
+                    this.injectRealTrain(lineCode, 'reverse', timeInMinutes);
+                    this.lastInjectionTime.set(lineCode, timeInMinutes);
+                }
             }
-            else if (revTrains.length < targetPerDir && canInject) {
-                this.injectRealTrain(lineCode, 'reverse', timeInMinutes);
-                this.lastInjectionTime.set(lineCode, timeInMinutes);
+            // DRAINING PHASE: Mark all trains for retirement, no new injections
+            else if (isDraining) {
+                trains.forEach(t => {
+                    if (t.state === 'RUNNING' && !t.wantsToRetire) {
+                        t.wantsToRetire = true;
+                    }
+                });
             }
+            // NORMAL OPERATION: Regular injection/retirement logic
+            else if (isOperating) {
+                if (fwdTrains.length < targetPerDir && canInject) {
+                    this.injectRealTrain(lineCode, 'forward', timeInMinutes);
+                    this.lastInjectionTime.set(lineCode, timeInMinutes);
+                }
+                else if (revTrains.length < targetPerDir && canInject) {
+                    this.injectRealTrain(lineCode, 'reverse', timeInMinutes);
+                    this.lastInjectionTime.set(lineCode, timeInMinutes);
+                }
 
-            if (fwdTrains.length > targetPerDir) {
-                this.retireTrain(fwdTrains);
-            }
-            if (revTrains.length > targetPerDir) {
-                this.retireTrain(revTrains);
+                if (fwdTrains.length > targetPerDir) {
+                    this.retireTrain(fwdTrains);
+                }
+                if (revTrains.length > targetPerDir) {
+                    this.retireTrain(revTrains);
+                }
             }
 
             // Apply Safety Spacing (Braking if too close)
@@ -241,6 +287,109 @@ export class SimulationEngine {
         });
 
         this.lastUpdateTime = timeInMinutes;
+    }
+
+    // Initialize line state for deployment phase (before service starts)
+    resetLineStateForDeployment(lineCode, timeInMinutes, schedule) {
+        const deployWindow = getLineDeploymentWindow(lineCode);
+        const deployProgress = (timeInMinutes - deployWindow.deployStart) / (schedule.startTime - deployWindow.deployStart);
+        
+        const dwellTimeMinutes = getDwellTime(lineCode) / 60;
+        const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
+        const frequency = getLineFrequency(lineCode, schedule.startTime); // Use service start frequency
+
+        const neededPerDir = Math.max(1, Math.ceil(journeyTime / frequency));
+        const maxFleet = schedule.maxFleet || (neededPerDir * 2);
+        const targetTotal = Math.min(neededPerDir * 2, Math.floor(maxFleet * 0.9));
+        const targetPerDir = Math.floor(targetTotal / 2);
+        
+        // Calculate how many trains should be deployed based on progress
+        const targetDeploy = Math.floor(targetPerDir * deployProgress);
+        
+        const trains = [];
+        for (let i = 0; i < targetDeploy; i++) {
+            trains.push({
+                id: this.generateTrainId(lineCode, `DF${i}`),
+                line: lineCode,
+                direction: 'forward',
+                entryTime: timeInMinutes - (i * frequency),
+                state: 'RUNNING',
+                isAtStation: false,
+                wantsToRetire: false,
+                totalDelay: 0
+            });
+            trains.push({
+                id: this.generateTrainId(lineCode, `DR${i}`),
+                line: lineCode,
+                direction: 'reverse',
+                entryTime: timeInMinutes - (i * frequency) - (frequency / 2),
+                state: 'RUNNING',
+                isAtStation: false,
+                wantsToRetire: false,
+                totalDelay: 0
+            });
+        }
+
+        this.activeTrains.set(lineCode, trains);
+        this.lastInjectionTime.set(lineCode, timeInMinutes);
+    }
+
+    // Start draining a line (mark all trains for retirement)
+    startDrainingLine(lineCode, timeInMinutes) {
+        let trains = this.activeTrains.get(lineCode) || [];
+        
+        // If no trains yet (jumped into draining phase), initialize with retiring trains
+        if (trains.length === 0) {
+            const schedule = LINE_SCHEDULES[lineCode];
+            const deployWindow = getLineDeploymentWindow(lineCode);
+            const drainProgress = (timeInMinutes - schedule.endTime) / (deployWindow.drainEnd - schedule.endTime);
+            
+            const dwellTimeMinutes = getDwellTime(lineCode) / 60;
+            const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
+            const frequency = getLineFrequency(lineCode, schedule.endTime);
+
+            const neededPerDir = Math.max(1, Math.ceil(journeyTime / frequency));
+            const maxFleet = schedule.maxFleet || (neededPerDir * 2);
+            const targetTotal = Math.min(neededPerDir * 2, Math.floor(maxFleet * 0.9));
+            const targetPerDir = Math.floor(targetTotal / 2);
+            
+            // Remaining trains based on drain progress
+            const remaining = Math.floor(targetPerDir * (1 - drainProgress));
+            
+            for (let i = 0; i < remaining; i++) {
+                trains.push({
+                    id: this.generateTrainId(lineCode, `XF${i}`),
+                    line: lineCode,
+                    direction: 'forward',
+                    entryTime: timeInMinutes - (i * frequency),
+                    state: 'RUNNING',
+                    isAtStation: false,
+                    wantsToRetire: true, // Already marked for retirement
+                    totalDelay: 0
+                });
+                trains.push({
+                    id: this.generateTrainId(lineCode, `XR${i}`),
+                    line: lineCode,
+                    direction: 'reverse',
+                    entryTime: timeInMinutes - (i * frequency) - (frequency / 2),
+                    state: 'RUNNING',
+                    isAtStation: false,
+                    wantsToRetire: true, // Already marked for retirement
+                    totalDelay: 0
+                });
+            }
+            
+            this.activeTrains.set(lineCode, trains);
+        } else {
+            // Mark all existing trains for retirement
+            trains.forEach(t => {
+                if (t.state === 'RUNNING' && !t.wantsToRetire) {
+                    t.wantsToRetire = true;
+                }
+            });
+        }
+        
+        this.lastInjectionTime.set(lineCode, timeInMinutes);
     }
 
     // Safety Spacing Logic (Moving Block / CBTC)

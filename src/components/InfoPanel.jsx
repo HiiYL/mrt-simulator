@@ -2,6 +2,26 @@
 import { MRT_LINES, getAllLineCodes } from '../data/mrt-routes.js';
 import { formatTime } from '../data/schedule.js';
 
+function getStatusClass(status) {
+    switch (status) {
+        case 'Peak Hour': return 'peak';
+        case 'Pre-Service': return 'pre-service';
+        case 'Service Ended': return 'service-ended';
+        case 'Late Night': return 'late-night';
+        default: return 'off-peak';
+    }
+}
+
+function getStatusIcon(status) {
+    switch (status) {
+        case 'Peak Hour': return '🚇';
+        case 'Pre-Service': return '🌅';
+        case 'Service Ended': return '🌙';
+        case 'Late Night': return '🌃';
+        default: return '🚃';
+    }
+}
+
 export function InfoPanel({ stats, currentTime }) {
     const lineCodes = getAllLineCodes();
 
@@ -21,12 +41,14 @@ export function InfoPanel({ stats, currentTime }) {
             </div>
 
             <div className="operating-status">
-                <span className={`status-badge ${stats?.isPeakHour ? 'peak' : 'off-peak'}`}>
-                    {stats?.operatingStatus || 'Off-Peak'}
+                <span className={`status-badge ${getStatusClass(stats?.operatingStatus)}`}>
+                    {getStatusIcon(stats?.operatingStatus)} {stats?.operatingStatus || 'Off-Peak'}
                 </span>
-                <span className="frequency-info">
-                    Every {stats?.frequency || 5} min
-                </span>
+                {stats?.operatingStatus !== 'Pre-Service' && stats?.operatingStatus !== 'Service Ended' && (
+                    <span className="frequency-info">
+                        Every {stats?.frequency || 5} min
+                    </span>
+                )}
             </div>
 
             <div className="legend">
@@ -49,7 +71,7 @@ export function InfoPanel({ stats, currentTime }) {
 
             <div className="credits">
                 <p>Based on official SMRT/SBS schedules</p>
-                <p>© 2024 MRT Simulator</p>
+                <p>© 2025 MRT Simulator</p>
             </div>
         </div>
     );

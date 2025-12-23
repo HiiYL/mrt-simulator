@@ -13,14 +13,18 @@ function App() {
     const now = new Date();
     const minutesFromMidnight = now.getHours() * 60 + now.getMinutes();
 
-    // If within operating hours, use current time
-    if (minutesFromMidnight >= SCHEDULE_CONFIG.startTime &&
-      minutesFromMidnight < SCHEDULE_CONFIG.endTime) {
+    // If within service hours (5AM - 1AM next day), use current time
+    if (minutesFromMidnight >= SCHEDULE_CONFIG.serviceStartTime ||
+      minutesFromMidnight < (SCHEDULE_CONFIG.endTime % (24 * 60))) {
+      // Handle times after midnight (e.g., 12:30 AM = 30 minutes)
+      if (minutesFromMidnight < SCHEDULE_CONFIG.serviceStartTime) {
+        return minutesFromMidnight + 24 * 60; // Convert to 24+ hour format
+      }
       return minutesFromMidnight;
     }
 
-    // Otherwise start at 8:00 AM (peak hour)
-    return 8 * 60;
+    // Otherwise start at 4:30 AM to see deployment phase
+    return 4 * 60 + 30;
   };
 
   const [displayTime, setDisplayTime] = useState(getInitialTime);

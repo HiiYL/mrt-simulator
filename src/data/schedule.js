@@ -146,9 +146,13 @@ export const LINE_SCHEDULES = {
 };
 
 export const SCHEDULE_CONFIG = {
-    // General operating hours (used for time slider bounds)
-    startTime: 5 * 60,          // 5:00 AM (earliest line)
-    endTime: 24 * 60 + 26,      // 12:26 AM (latest line)
+    // Full day timeline (midnight to ~1:30 AM next day for complete coverage)
+    startTime: 0,               // 12:00 AM (midnight) - start of day
+    endTime: 25 * 60 + 30,      // 1:30 AM next day - covers all last trains
+    
+    // Service hours (when trains actually run)
+    serviceStartTime: 5 * 60,   // 5:00 AM (earliest line)
+    serviceEndTime: 24 * 60 + 40, // 12:40 AM (latest line - Punggol LRT)
 
     // Peak hours (morning and evening) - official LTA definition
     peakHours: [
@@ -223,10 +227,16 @@ export function getDwellTime(lineCode) {
 }
 
 // Convert minutes from midnight to HH:MM format
+// Handles times past midnight (e.g., 25*60 = 1:00 AM next day)
 export function formatTime(minutes) {
     const hours = Math.floor(minutes / 60) % 24;
     const mins = Math.floor(minutes % 60);
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    const timeStr = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    // Add "+1" indicator for times past midnight
+    if (minutes >= 24 * 60) {
+        return `${timeStr} +1`;
+    }
+    return timeStr;
 }
 
 // Parse time string (HH:MM) to minutes from midnight
@@ -246,6 +256,14 @@ export function getTimeRange() {
 
 // Get operating status string for display
 export function getOperatingStatus(timeInMinutes) {
+    // Check if before service hours
+    if (timeInMinutes < SCHEDULE_CONFIG.serviceStartTime) {
+        return 'Pre-Service';
+    }
+    // Check if after all services ended
+    if (timeInMinutes > SCHEDULE_CONFIG.serviceEndTime) {
+        return 'Service Ended';
+    }
     if (isPeakHour(timeInMinutes)) {
         return 'Peak Hour';
     }
@@ -253,4 +271,34 @@ export function getOperatingStatus(timeInMinutes) {
         return 'Late Night';
     }
     return 'Off-Peak';
+}
+
+// Check if a line is in deployment phase (before official start, trains leaving depots)
+export function isLineDeploying(lineCode, timeInMinutes) {
+    const schedule = LINE_SCHEDULES[lineCode];
+    if (!schedule) return false;
+    // Deployment starts ~30 minutes before first train (for crew preparation and positioning)
+    const deploymentStart = schedule.startTime - 30;
+    return timeInMinutes >= deploymentStart && timeInMinutes < schedule.startTime;
+}
+
+// Check if a line is in draining phase (after last train, returning to depots)
+export function isLineDraining(lineCode, timeInMinutes) {
+    const schedule = LINE_SCHEDULES[lineCode];
+    if (!schedule) return false;
+    // Draining continues for ~45 minutes after last service (trains return to depot)
+    const drainEnd = schedule.endTime + 45;
+    return timeInMinutes > schedule.endTime && timeInMinutes <= drainEnd;
+}
+
+// Get the deployment window for a line
+export function getLineDeploymentWindow(lineCode) {
+    const schedule = LINE_SCHEDULES[lineCode];
+    if (!schedule) return null;
+    return {
+        deployStart: schedule.startTime - 30,
+        serviceStart: schedule.startTime,
+        serviceEnd: schedule.endTime,
+        drainEnd: schedule.endTime + 45
+    };
 }
