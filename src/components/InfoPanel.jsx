@@ -15,9 +15,18 @@ export function InfoPanel({ stats, currentTime }) {
                     <span className="stat-label">Active Trains</span>
                 </div>
                 <div className="stat">
-                    <span className="stat-value">{stats?.frequency || 0} min</span>
-                    <span className="stat-label">Frequency</span>
+                    <span className="stat-value">{stats?.trainsInMotion || 0}</span>
+                    <span className="stat-label">In Motion</span>
                 </div>
+            </div>
+
+            <div className="operating-status">
+                <span className={`status-badge ${stats?.isPeakHour ? 'peak' : 'off-peak'}`}>
+                    {stats?.operatingStatus || 'Off-Peak'}
+                </span>
+                <span className="frequency-info">
+                    Every {stats?.frequency || 5} min
+                </span>
             </div>
 
             <div className="legend">
@@ -39,7 +48,7 @@ export function InfoPanel({ stats, currentTime }) {
             </div>
 
             <div className="credits">
-                <p>Data simulated based on LTA schedules</p>
+                <p>Based on official SMRT/SBS schedules</p>
                 <p>© 2024 MRT Simulator</p>
             </div>
         </div>

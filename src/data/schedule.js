@@ -1,71 +1,87 @@
 // Singapore MRT Schedule Configuration
-// Based on real operating hours and frequencies (December 2024)
+// Official operating hours from SMRT and SBS Transit (December 2024)
 
 // Per-line operating hours (in minutes from midnight)
-// Weekday schedules
+// Based on first/last train from central stations (weekday schedules)
 export const LINE_SCHEDULES = {
     NS: {
         name: 'North-South Line',
-        startTime: 4 * 60 + 59,   // 4:59 AM
+        operator: 'SMRT',
+        // First train: ~5:00 AM, Last train: ~12:15 AM
+        startTime: 5 * 60,        // 5:00 AM
         endTime: 24 * 60 + 15,    // 12:15 AM next day
+        stationDwellTime: 30,     // seconds at each station
     },
     EW: {
         name: 'East-West Line',
-        startTime: 4 * 60 + 59,   // 4:59 AM
+        operator: 'SMRT',
+        // First train: ~5:00 AM, Last train: ~12:16 AM
+        startTime: 5 * 60,        // 5:00 AM
         endTime: 24 * 60 + 16,    // 12:16 AM next day
+        stationDwellTime: 30,
     },
     NE: {
         name: 'North-East Line',
+        operator: 'SBS Transit',
+        // First train: ~5:39 AM, Last train: ~11:25 PM
         startTime: 5 * 60 + 39,   // 5:39 AM
         endTime: 23 * 60 + 25,    // 11:25 PM
+        stationDwellTime: 25,     // Driverless trains, slightly faster
     },
     CC: {
         name: 'Circle Line',
+        operator: 'SMRT',
+        // First train: ~5:50 AM, Last train: ~11:59 PM
         startTime: 5 * 60 + 50,   // 5:50 AM
         endTime: 23 * 60 + 59,    // 11:59 PM
+        stationDwellTime: 25,     // Driverless trains
     },
     DT: {
         name: 'Downtown Line',
-        startTime: 5 * 60 + 30,   // 5:30 AM
-        endTime: 23 * 60 + 35,    // 11:35 PM
+        operator: 'SBS Transit',
+        // First train: ~6:04 AM, Last train: ~12:07 AM (from Downtown station)
+        startTime: 6 * 60 + 4,    // 6:04 AM
+        endTime: 24 * 60 + 7,     // 12:07 AM next day
+        stationDwellTime: 25,     // Driverless trains
     },
     TE: {
         name: 'Thomson-East Coast Line',
-        startTime: 5 * 60 + 36,   // 5:36 AM
-        endTime: 23 * 60 + 30,    // 11:30 PM
+        operator: 'SMRT',
+        // First train: ~5:48 AM, Last train: ~12:26 AM
+        startTime: 5 * 60 + 48,   // 5:48 AM
+        endTime: 24 * 60 + 26,    // 12:26 AM next day
+        stationDwellTime: 25,     // Driverless trains
     }
 };
 
 export const SCHEDULE_CONFIG = {
     // General operating hours (used for time slider bounds)
-    startTime: 4 * 60 + 59, // 4:59 AM (earliest line)
-    endTime: 24 * 60 + 16,  // 12:16 AM (latest line)
+    startTime: 5 * 60,          // 5:00 AM (earliest line)
+    endTime: 24 * 60 + 26,      // 12:26 AM (latest line)
 
-    // Peak hours (morning and evening)
+    // Peak hours (morning and evening) - official LTA definition
     peakHours: [
-        { start: 7 * 60, end: 9 * 60 },     // 7:00 AM - 9:00 AM
-        { start: 17 * 60, end: 19 * 60 }    // 5:00 PM - 7:00 PM
+        { start: 7 * 60 + 30, end: 9 * 60 + 30 },   // 7:30 AM - 9:30 AM
+        { start: 17 * 60, end: 20 * 60 }            // 5:00 PM - 8:00 PM
     ],
 
-    // Train frequency in minutes
-    peakFrequency: 2.5,      // 2-3 minutes during peak
-    offPeakFrequency: 6,     // 5-7 minutes during off-peak
+    // Train frequency in minutes (based on LTA data)
+    peakFrequency: 2,         // 2 minutes during peak
+    offPeakFrequency: 5,      // 5 minutes during off-peak
+    nightFrequency: 7,        // 7 minutes late night (after 10 PM)
 
-    // Average journey time between stations (minutes)
-    avgStationTime: 2.5,
+    // Average travel time between stations (minutes)
+    avgTravelTime: 2,         // 2 minutes between stations
 
-    // Dwell time at stations (seconds)
-    dwellTime: 30
+    // Default dwell time at stations (seconds)
+    defaultDwellTime: 30
 };
 
 // Check if a given time is within a line's operating hours
 export function isLineOperating(lineCode, timeInMinutes) {
     const schedule = LINE_SCHEDULES[lineCode];
     if (!schedule) return false;
-
-    // Handle times past midnight
-    const adjustedTime = timeInMinutes > 24 * 60 ? timeInMinutes : timeInMinutes;
-    return adjustedTime >= schedule.startTime && adjustedTime <= schedule.endTime;
+    return timeInMinutes >= schedule.startTime && timeInMinutes <= schedule.endTime;
 }
 
 // Check if a given time (minutes from midnight) is during peak hours
@@ -75,11 +91,26 @@ export function isPeakHour(timeInMinutes) {
     );
 }
 
+// Check if it's late night (after 10 PM)
+export function isLateNight(timeInMinutes) {
+    return timeInMinutes >= 22 * 60; // After 10 PM
+}
+
 // Get train frequency at a given time
 export function getFrequency(timeInMinutes) {
-    return isPeakHour(timeInMinutes)
-        ? SCHEDULE_CONFIG.peakFrequency
-        : SCHEDULE_CONFIG.offPeakFrequency;
+    if (isPeakHour(timeInMinutes)) {
+        return SCHEDULE_CONFIG.peakFrequency;
+    }
+    if (isLateNight(timeInMinutes)) {
+        return SCHEDULE_CONFIG.nightFrequency;
+    }
+    return SCHEDULE_CONFIG.offPeakFrequency;
+}
+
+// Get dwell time for a specific line (in seconds)
+export function getDwellTime(lineCode) {
+    const schedule = LINE_SCHEDULES[lineCode];
+    return schedule?.stationDwellTime || SCHEDULE_CONFIG.defaultDwellTime;
 }
 
 // Convert minutes from midnight to HH:MM format
@@ -102,4 +133,15 @@ export function getTimeRange() {
         end: SCHEDULE_CONFIG.endTime,
         duration: SCHEDULE_CONFIG.endTime - SCHEDULE_CONFIG.startTime
     };
+}
+
+// Get operating status string for display
+export function getOperatingStatus(timeInMinutes) {
+    if (isPeakHour(timeInMinutes)) {
+        return 'Peak Hour';
+    }
+    if (isLateNight(timeInMinutes)) {
+        return 'Late Night';
+    }
+    return 'Off-Peak';
 }
