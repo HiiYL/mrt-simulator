@@ -10,6 +10,10 @@ const LINE_STATIONS = {
     CCL: ['CC1', 'CC2', 'CC3', 'CC4', 'CC5', 'CC6', 'CC7', 'CC8', 'CC9', 'CC10', 'CC11', 'CC12', 'CC13', 'CC14', 'CC15', 'CC16', 'CC17', 'CC19', 'CC20', 'CC21', 'CC22', 'CC23', 'CC24', 'CC25', 'CC26', 'CC27', 'CC28', 'CC29'],
     DTL: ['DT1', 'DT2', 'DT3', 'DT5', 'DT6', 'DT7', 'DT8', 'DT9', 'DT10', 'DT11', 'DT12', 'DT13', 'DT14', 'DT15', 'DT16', 'DT17', 'DT18', 'DT19', 'DT20', 'DT21', 'DT22', 'DT23', 'DT24', 'DT25', 'DT26', 'DT27', 'DT28', 'DT29', 'DT30', 'DT31', 'DT32', 'DT33', 'DT34', 'DT35'],
     TEL: ['TE1', 'TE2', 'TE3', 'TE4', 'TE5', 'TE6', 'TE7', 'TE8', 'TE9', 'TE11', 'TE12', 'TE13', 'TE14', 'TE15', 'TE16', 'TE17', 'TE18', 'TE19', 'TE20', 'TE22', 'TE23', 'TE24', 'TE25', 'TE26', 'TE27', 'TE28', 'TE29'],
+    // LRT Systems - use correct LTA API line codes
+    BPL: ['BP1', 'BP2', 'BP3', 'BP4', 'BP5', 'BP6', 'BP7', 'BP8', 'BP9', 'BP10', 'BP11', 'BP12', 'BP13', 'BP14'],
+    // Sengkang-Punggol LRT share the STL line code
+    STL: ['STC', 'SW1', 'SW2', 'SW3', 'SW4', 'SW5', 'SW6', 'SW7', 'SW8', 'SE1', 'SE2', 'SE3', 'SE4', 'SE5', 'PTC', 'PW1', 'PW2', 'PW3', 'PW4', 'PW5', 'PW6', 'PW7', 'PE1', 'PE2', 'PE3', 'PE4', 'PE5', 'PE6', 'PE7'],
 };
 
 async function fetchStationTiming(lineCode, stationCode) {
@@ -58,38 +62,32 @@ function parseStationHtml(html, stationCode) {
         directionLabels.push(match[1].trim());
     }
 
-    // Parse each tab (tab1, tab2, tab3)
-    for (let i = 1; i <= 3; i++) {
-        const tabRegex = new RegExp(`<div class="tab${i}"[^>]*>([\\s\\S]*?)<\\/div>\\s*(?:<div class="tab|<h5 class="mt-5">Exit)`, 'i');
-        const tabMatch = html.match(tabRegex);
+    // SIMPLIFIED: Find all first-train tables directly (works for both MRT and LRT)
+    const firstTrainTables = html.matchAll(/<table class="table first-train">([\s\S]*?)<\/table>/g);
+    let tabIndex = 0;
 
-        if (tabMatch) {
-            const tabContent = tabMatch[1];
+    for (const tableMatch of firstTrainTables) {
+        const tableContent = tableMatch[1];
 
-            // Extract first train times from first-train table
-            const firstTrainMatch = tabContent.match(/<table class="table first-train">([\s\S]*?)<\/table>/);
-            if (firstTrainMatch) {
-                const tableContent = firstTrainMatch[1];
-
-                // Extract all times
-                const times = {};
-                const rowMatches = tableContent.matchAll(/<tr>\s*<td>([^<]+)<\/td>\s*<td>(\d{4})<\/td>\s*<\/tr>/g);
-                for (const row of rowMatches) {
-                    const day = row[1].trim();
-                    const time = row[2];
-                    if (day.includes('Mon')) times.weekday = time;
-                    else if (day.includes('Sat')) times.saturday = time;
-                    else if (day.includes('Sun')) times.sunday = time;
-                }
-
-                if (Object.keys(times).length > 0) {
-                    result.directions.push({
-                        towards: directionLabels[i - 1] || `Direction ${i}`,
-                        firstTrain: times
-                    });
-                }
-            }
+        // Extract all times - handle both MRT format "0531" and LRT format "0531 (To Compassvale)"
+        const times = {};
+        const rowMatches = tableContent.matchAll(/<tr>\s*<td>([^<]+)<\/td>\s*<td>(\d{4})[^<]*<\/td>\s*<\/tr>/g);
+        for (const row of rowMatches) {
+            const day = row[1].trim();
+            const time = row[2];
+            // Only keep the first time we find for each day type
+            if (day.includes('Mon') && !times.weekday) times.weekday = time;
+            else if (day.includes('Sat') && !times.saturday) times.saturday = time;
+            else if (day.includes('Sun') && !times.sunday) times.sunday = time;
         }
+
+        if (Object.keys(times).length > 0) {
+            result.directions.push({
+                towards: directionLabels[tabIndex] || `Direction ${tabIndex + 1}`,
+                firstTrain: times
+            });
+        }
+        tabIndex++;
     }
 
     return result;

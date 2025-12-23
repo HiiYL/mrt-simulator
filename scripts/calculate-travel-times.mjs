@@ -36,6 +36,22 @@ const LINE_SEQUENCES = {
     TE: {
         mainLine: ['TE1', 'TE2', 'TE3', 'TE4', 'TE5', 'TE6', 'TE7', 'TE8', 'TE9', 'TE11', 'TE12', 'TE13', 'TE14', 'TE15', 'TE16', 'TE17', 'TE18', 'TE19', 'TE20', 'TE22', 'TE23', 'TE24', 'TE25', 'TE26', 'TE27', 'TE28', 'TE29'],
         direction: 'Bayshore'
+    },
+    // LRT Systems
+    BP: {
+        // Bukit Panjang LRT loop
+        mainLine: ['BP1', 'BP2', 'BP3', 'BP4', 'BP5', 'BP6', 'BP7', 'BP8', 'BP9', 'BP10', 'BP11', 'BP12', 'BP13', 'BP14'],
+        direction: 'Choa Chu Kang'
+    },
+    SK: {
+        // Sengkang LRT - West Loop + East Loop combined
+        mainLine: ['SW1', 'SW2', 'SW3', 'SW4', 'SW5', 'SW6', 'SW7', 'SW8', 'SE1', 'SE2', 'SE3', 'SE4', 'SE5'],
+        direction: 'Sengkang'
+    },
+    PG: {
+        // Punggol LRT - West Loop + East Loop combined
+        mainLine: ['PW1', 'PW2', 'PW3', 'PW4', 'PW5', 'PW6', 'PW7', 'PE1', 'PE2', 'PE3', 'PE4', 'PE5', 'PE6', 'PE7'],
+        direction: 'Punggol'
     }
 };
 

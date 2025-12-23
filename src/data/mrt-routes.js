@@ -211,6 +211,75 @@ export const MRT_LINES = {
             { code: 'CG1', name: 'Expo', lat: 1.3351, lng: 103.9615 },       // Interchange with DT35
             { code: 'CG2', name: 'Changi Airport', lat: 1.3574, lng: 103.9884 },
         ]
+    },
+    // LRT Systems
+    BP: {
+        name: 'Bukit Panjang LRT',
+        color: '#748477', // Grey
+        isLRT: true,
+        stations: [
+            { code: 'BP1', name: 'Choa Chu Kang', lat: 1.38551, lng: 103.74425 }, // Interchange with NS4
+            { code: 'BP2', name: 'South View', lat: 1.38031, lng: 103.74522 },
+            { code: 'BP3', name: 'Keat Hong', lat: 1.37867, lng: 103.74893 },
+            { code: 'BP4', name: 'Teck Whye', lat: 1.37687, lng: 103.75294 },
+            { code: 'BP5', name: 'Phoenix', lat: 1.37848, lng: 103.75762 },
+            { code: 'BP6', name: 'Bukit Panjang', lat: 1.37831, lng: 103.76288 }, // Interchange with DT1
+            { code: 'BP7', name: 'Petir', lat: 1.37773, lng: 103.76715 },
+            { code: 'BP8', name: 'Pending', lat: 1.37597, lng: 103.77138 },
+            { code: 'BP9', name: 'Bangkit', lat: 1.38003, lng: 103.77263 },
+            { code: 'BP10', name: 'Fajar', lat: 1.38454, lng: 103.77083 },
+            { code: 'BP11', name: 'Segar', lat: 1.38768, lng: 103.76951 },
+            { code: 'BP12', name: 'Jelapang', lat: 1.38646, lng: 103.76427 },
+            { code: 'BP13', name: 'Senja', lat: 1.38272, lng: 103.76240 },
+            { code: 'BP14', name: 'Ten Mile Junction', lat: 1.38039, lng: 103.75852 },
+        ]
+    },
+    SK: {
+        name: 'Sengkang LRT',
+        color: '#748477', // Grey
+        isLRT: true,
+        stations: [
+            // West Loop
+            { code: 'STC', name: 'Sengkang', lat: 1.39178, lng: 103.89549 }, // Transfer station (NE16)
+            { code: 'SW1', name: 'Cheng Lim', lat: 1.39633, lng: 103.89381 },
+            { code: 'SW2', name: 'Farmway', lat: 1.39720, lng: 103.88880 },
+            { code: 'SW3', name: 'Kupang', lat: 1.39852, lng: 103.88126 },
+            { code: 'SW4', name: 'Thanggam', lat: 1.39728, lng: 103.87556 },
+            { code: 'SW5', name: 'Fernvale', lat: 1.39194, lng: 103.87615 },
+            { code: 'SW6', name: 'Layar', lat: 1.39223, lng: 103.88002 },
+            { code: 'SW7', name: 'Tongkang', lat: 1.38952, lng: 103.88559 },
+            { code: 'SW8', name: 'Renjong', lat: 1.38660, lng: 103.89028 },
+            // East Loop  
+            { code: 'SE1', name: 'Compassvale', lat: 1.39461, lng: 103.90015 },
+            { code: 'SE2', name: 'Rumbia', lat: 1.39107, lng: 103.90563 },
+            { code: 'SE3', name: 'Bakau', lat: 1.38830, lng: 103.90532 },
+            { code: 'SE4', name: 'Kangkar', lat: 1.38378, lng: 103.90255 },
+            { code: 'SE5', name: 'Ranggung', lat: 1.38367, lng: 103.89716 },
+        ]
+    },
+    PG: {
+        name: 'Punggol LRT',
+        color: '#748477', // Grey
+        isLRT: true,
+        stations: [
+            // West Loop
+            { code: 'PTC', name: 'Punggol', lat: 1.40537, lng: 103.90230 }, // Transfer station (NE17)
+            { code: 'PW1', name: 'Sam Kee', lat: 1.40976, lng: 103.90489 },
+            { code: 'PW2', name: 'Teck Lee', lat: 1.41280, lng: 103.90655 },
+            { code: 'PW3', name: 'Punggol Point', lat: 1.41781, lng: 103.90679 },
+            { code: 'PW4', name: 'Samudera', lat: 1.41600, lng: 103.90220 },
+            { code: 'PW5', name: 'Nibong', lat: 1.41156, lng: 103.90028 },
+            { code: 'PW6', name: 'Sumang', lat: 1.40869, lng: 103.89859 },
+            { code: 'PW7', name: 'Soo Teck', lat: 1.40545, lng: 103.89720 },
+            // East Loop
+            { code: 'PE1', name: 'Cove', lat: 1.39921, lng: 103.90629 },
+            { code: 'PE2', name: 'Meridian', lat: 1.39698, lng: 103.90909 },
+            { code: 'PE3', name: 'Coral Edge', lat: 1.39371, lng: 103.91259 },
+            { code: 'PE4', name: 'Riviera', lat: 1.39455, lng: 103.91636 },
+            { code: 'PE5', name: 'Kadaloor', lat: 1.39919, lng: 103.91671 },
+            { code: 'PE6', name: 'Oasis', lat: 1.40210, lng: 103.91268 },
+            { code: 'PE7', name: 'Damai', lat: 1.40532, lng: 103.90837 },
+        ]
     }
 };
 

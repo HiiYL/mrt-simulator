@@ -1,6 +1,6 @@
 // Simulation Engine - Manages train spawning and movement with per-station travel times
 import { MRT_LINES, getAllLineCodes } from '../data/mrt-routes.js';
-import { LINE_SCHEDULES, getLineFrequency, getDwellTime, getOperatingStatus, getFrequency } from '../data/schedule.js';
+import { LINE_SCHEDULES, getLineFrequency, getDwellTime, getOperatingStatus, getFrequency, isPeakHour } from '../data/schedule.js';
 import { RouteInterpolator } from './RouteInterpolator.js';
 import { INTER_STATION_TIMES } from '../data/travel-times.js';
 
@@ -126,7 +126,10 @@ export class SimulationEngine {
             const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
 
             // Calculate how many trains should be on the line at any time
-            const trainsOnLine = Math.max(1, Math.ceil(journeyTime / frequency));
+            // This is capped by the actual fleet size
+            const neededTrains = Math.max(1, Math.ceil(journeyTime / frequency));
+            const maxFleet = schedule.maxFleet || neededTrains; // Use official fleet cap if available
+            const trainsOnLine = Math.min(neededTrains, Math.floor(maxFleet * 0.85)); // ~85% fleet in service
 
             // Time elapsed since line started operating
             const elapsedFromStart = timeInMinutes - schedule.startTime;
@@ -332,6 +335,8 @@ export class SimulationEngine {
             trainsAtStations,
             trainsAtStation: trainsAtStations, // Alias for backwards compatibility
             byLine,
+            trainsByLine: byLine, // Alias for test compatibility
+            isPeakHour: isPeakHour(timeInMinutes),
             operatingStatus,
             frequency
         };

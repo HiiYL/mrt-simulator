@@ -1,6 +1,6 @@
 // Inter-station travel times in minutes (from LTA first train timings)
 // Each array represents travel time FROM station[i] TO station[i+1]
-// Generated: 2025-12-23T08:21:30.407Z
+// Generated: 2025-12-23T08:53:02.869Z
 
 export const INTER_STATION_TIMES = {
   "EW": [
@@ -136,6 +136,7 @@ export const INTER_STATION_TIMES = {
     2,
     2,
     2,
+    1,
     2,
     2,
     2,
@@ -147,8 +148,7 @@ export const INTER_STATION_TIMES = {
     2,
     2,
     2,
-    2,
-    2,
+    3,
     2
   ],
   "TE": [
@@ -173,6 +173,50 @@ export const INTER_STATION_TIMES = {
     2,
     3,
     3,
+    2,
+    2,
+    2,
+    2,
+    2
+  ],
+  "BP": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    1,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+  ],
+  "SK": [
+    1,
+    1,
+    1,
+    2,
+    2,
+    1,
+    2,
+    2,
+    2,
+    2,
+    1,
+    2
+  ],
+  "PG": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
     2,
     2,
     2,
@@ -725,6 +769,20 @@ export const STATION_TIMINGS = {
       }
     ]
   },
+  "EW33": {
+    "stationCode": "EW33",
+    "stationName": "Tuas Link",
+    "directions": [
+      {
+        "towards": "Pasir Ris",
+        "firstTrain": {
+          "weekday": "0519",
+          "saturday": "0519",
+          "sunday": "0549"
+        }
+      }
+    ]
+  },
   "NS2": {
     "stationCode": "NS2",
     "stationName": "Bukit Batok",
@@ -930,8 +988,8 @@ export const STATION_TIMINGS = {
       {
         "towards": "Jurong East",
         "firstTrain": {
-          "weekday": "0525",
-          "saturday": "0524",
+          "weekday": "0516",
+          "saturday": "0516",
           "sunday": "0548"
         }
       },
@@ -952,8 +1010,8 @@ export const STATION_TIMINGS = {
       {
         "towards": "Jurong East",
         "firstTrain": {
-          "weekday": "0520",
-          "saturday": "0519",
+          "weekday": "0510",
+          "saturday": "0510",
           "sunday": "0543"
         }
       },
@@ -974,8 +1032,8 @@ export const STATION_TIMINGS = {
       {
         "towards": "Jurong East",
         "firstTrain": {
-          "weekday": "0517",
-          "saturday": "0516",
+          "weekday": "0507",
+          "saturday": "0507",
           "sunday": "0540"
         }
       },
@@ -1952,6 +2010,14 @@ export const STATION_TIMINGS = {
           "saturday": "0608",
           "sunday": "0626"
         }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0610",
+          "saturday": "0610",
+          "sunday": "0630"
+        }
       }
     ]
   },
@@ -1965,6 +2031,14 @@ export const STATION_TIMINGS = {
           "weekday": "0606",
           "saturday": "0606",
           "sunday": "0624"
+        }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0612",
+          "saturday": "0612",
+          "sunday": "0631"
         }
       }
     ]
@@ -1980,6 +2054,14 @@ export const STATION_TIMINGS = {
           "saturday": "0604",
           "sunday": "0622"
         }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0613",
+          "saturday": "0613",
+          "sunday": "0633"
+        }
       }
     ]
   },
@@ -1993,6 +2075,14 @@ export const STATION_TIMINGS = {
           "weekday": "0602",
           "saturday": "0602",
           "sunday": "0620"
+        }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0615",
+          "saturday": "0615",
+          "sunday": "0635"
         }
       }
     ]
@@ -2008,6 +2098,14 @@ export const STATION_TIMINGS = {
           "saturday": "0600",
           "sunday": "0618"
         }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0559",
+          "saturday": "0559",
+          "sunday": "0619"
+        }
       }
     ]
   },
@@ -2021,6 +2119,14 @@ export const STATION_TIMINGS = {
           "weekday": "0558",
           "saturday": "0558",
           "sunday": "0616"
+        }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0601",
+          "saturday": "0601",
+          "sunday": "0621"
         }
       }
     ]
@@ -2036,6 +2142,14 @@ export const STATION_TIMINGS = {
           "saturday": "0554",
           "sunday": "0612"
         }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0605",
+          "saturday": "0605",
+          "sunday": "0625"
+        }
       }
     ]
   },
@@ -2049,6 +2163,14 @@ export const STATION_TIMINGS = {
           "weekday": "0552",
           "saturday": "0552",
           "sunday": "0610"
+        }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0607",
+          "saturday": "0607",
+          "sunday": "0627"
         }
       }
     ]
@@ -2064,6 +2186,14 @@ export const STATION_TIMINGS = {
           "saturday": "0550",
           "sunday": "0608"
         }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0609",
+          "saturday": "0609",
+          "sunday": "0629"
+        }
       }
     ]
   },
@@ -2077,6 +2207,14 @@ export const STATION_TIMINGS = {
           "weekday": "0548",
           "saturday": "0548",
           "sunday": "0606"
+        }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0611",
+          "saturday": "0611",
+          "sunday": "0631"
         }
       }
     ]
@@ -2092,6 +2230,14 @@ export const STATION_TIMINGS = {
           "saturday": "0545",
           "sunday": "0603"
         }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0613",
+          "saturday": "0613",
+          "sunday": "0633"
+        }
       }
     ]
   },
@@ -2106,6 +2252,14 @@ export const STATION_TIMINGS = {
           "saturday": "0541",
           "sunday": "0559"
         }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0618",
+          "saturday": "0618",
+          "sunday": "0638"
+        }
       }
     ]
   },
@@ -2119,6 +2273,14 @@ export const STATION_TIMINGS = {
           "weekday": "0538",
           "saturday": "0538",
           "sunday": "0556"
+        }
+      },
+      {
+        "towards": "Expo",
+        "firstTrain": {
+          "weekday": "0621",
+          "saturday": "0621",
+          "sunday": "0641"
         }
       }
     ]
@@ -2587,6 +2749,356 @@ export const STATION_TIMINGS = {
           "weekday": "0556",
           "saturday": "0556",
           "sunday": "0616"
+        }
+      }
+    ]
+  },
+  "BP2": {
+    "stationCode": "BP2",
+    "stationName": "South View",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0511",
+          "saturday": "0511",
+          "sunday": "0530"
+        }
+      }
+    ]
+  },
+  "BP3": {
+    "stationCode": "BP3",
+    "stationName": "Keat Hong",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0509",
+          "saturday": "0509",
+          "sunday": "0528"
+        }
+      }
+    ]
+  },
+  "BP4": {
+    "stationCode": "BP4",
+    "stationName": "Teck Whye",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0508",
+          "saturday": "0508",
+          "sunday": "0527"
+        }
+      }
+    ]
+  },
+  "BP5": {
+    "stationCode": "BP5",
+    "stationName": "Phoenix",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0507",
+          "saturday": "0507",
+          "sunday": "0526"
+        }
+      }
+    ]
+  },
+  "BP7": {
+    "stationCode": "BP7",
+    "stationName": "Petir",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0506",
+          "saturday": "0506",
+          "sunday": "0525"
+        }
+      }
+    ]
+  },
+  "BP8": {
+    "stationCode": "BP8",
+    "stationName": "Pending",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0507",
+          "saturday": "0507",
+          "sunday": "0526"
+        }
+      }
+    ]
+  },
+  "BP9": {
+    "stationCode": "BP9",
+    "stationName": "Bangkit",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0506",
+          "saturday": "0506",
+          "sunday": "0525"
+        }
+      }
+    ]
+  },
+  "BP10": {
+    "stationCode": "BP10",
+    "stationName": "Fajar",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0504",
+          "saturday": "0504",
+          "sunday": "0523"
+        }
+      }
+    ]
+  },
+  "BP11": {
+    "stationCode": "BP11",
+    "stationName": "Segar",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0503",
+          "saturday": "0503",
+          "sunday": "0522"
+        }
+      }
+    ]
+  },
+  "BP12": {
+    "stationCode": "BP12",
+    "stationName": "Jelapang",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0501",
+          "saturday": "0501",
+          "sunday": "0520"
+        }
+      }
+    ]
+  },
+  "BP13": {
+    "stationCode": "BP13",
+    "stationName": "Senja",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "0500",
+          "saturday": "0500",
+          "sunday": "0519"
+        }
+      }
+    ]
+  },
+  "BP14": {
+    "stationCode": "BP14",
+    "stationName": "Ten Mile Junction",
+    "directions": [
+      {
+        "towards": "Choa Chu Kang",
+        "firstTrain": {
+          "weekday": "1000",
+          "saturday": "1000",
+          "sunday": "1000"
+        }
+      }
+    ]
+  },
+  "SW1": {
+    "stationCode": "SW1",
+    "stationName": "Cheng Lim",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0518",
+          "saturday": "0518",
+          "sunday": "0538"
+        }
+      }
+    ]
+  },
+  "SW2": {
+    "stationCode": "SW2",
+    "stationName": "Farmway",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0519",
+          "saturday": "0519",
+          "sunday": "0539"
+        }
+      }
+    ]
+  },
+  "SW3": {
+    "stationCode": "SW3",
+    "stationName": "Kupang",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0520",
+          "saturday": "0520",
+          "sunday": "0542"
+        }
+      }
+    ]
+  },
+  "SW4": {
+    "stationCode": "SW4",
+    "stationName": "Thanggam",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0521",
+          "saturday": "0521",
+          "sunday": "0541"
+        }
+      }
+    ]
+  },
+  "SW5": {
+    "stationCode": "SW5",
+    "stationName": "Fernvale",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0523",
+          "saturday": "0523",
+          "sunday": "0543"
+        }
+      }
+    ]
+  },
+  "SW6": {
+    "stationCode": "SW6",
+    "stationName": "Layar",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0525",
+          "saturday": "0525",
+          "sunday": "0545"
+        }
+      }
+    ]
+  },
+  "SW7": {
+    "stationCode": "SW7",
+    "stationName": "Tongkang",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0526",
+          "saturday": "0526",
+          "sunday": "0546"
+        }
+      }
+    ]
+  },
+  "SW8": {
+    "stationCode": "SW8",
+    "stationName": "Renjong",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0528",
+          "saturday": "0528",
+          "sunday": "0548"
+        }
+      }
+    ]
+  },
+  "SE1": {
+    "stationCode": "SE1",
+    "stationName": "Compassvale",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0526",
+          "saturday": "0526",
+          "sunday": "0546"
+        }
+      }
+    ]
+  },
+  "SE2": {
+    "stationCode": "SE2",
+    "stationName": "Rumbia",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0528",
+          "saturday": "0528",
+          "sunday": "0548"
+        }
+      }
+    ]
+  },
+  "SE3": {
+    "stationCode": "SE3",
+    "stationName": "Bakau",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0530",
+          "saturday": "0530",
+          "sunday": "0549"
+        }
+      }
+    ]
+  },
+  "SE4": {
+    "stationCode": "SE4",
+    "stationName": "Kangkar",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0531",
+          "saturday": "0531",
+          "sunday": "0551"
+        }
+      }
+    ]
+  },
+  "SE5": {
+    "stationCode": "SE5",
+    "stationName": "Ranggung",
+    "directions": [
+      {
+        "towards": "Sengkang",
+        "firstTrain": {
+          "weekday": "0531",
+          "saturday": "0531",
+          "sunday": "0551"
         }
       }
     ]
