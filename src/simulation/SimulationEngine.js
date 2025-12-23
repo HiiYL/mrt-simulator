@@ -4,6 +4,7 @@ import { LINE_SCHEDULES, getLineFrequency, getDwellTime, getOperatingStatus, get
 import { RouteInterpolator } from './RouteInterpolator.js';
 import { INTER_STATION_TIMES } from '../data/travel-times.js';
 import { DEPOTS, getDepotsForLine } from '../data/depots.js';
+import MRT_GEOJSON from '../data/singapore-mrt-fixed.json';
 
 // Singleton instance
 let engineInstance = null;
@@ -37,7 +38,15 @@ export class SimulationEngine {
     initializeRoutes() {
         Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
             const coordinates = line.stations.map(s => [s.lng, s.lat]);
-            this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates);
+
+            // Find detailed path from GeoJSON
+            const feature = MRT_GEOJSON.features.find(f => f.properties.code === lineCode);
+            // Ensure we have a LineString (array of points)
+            // If MultiLineString, we technically should merge them, but for now take the longest or first?
+            // Inspection implies LineString.
+            const detailedCoords = (feature && feature.geometry.type === 'LineString') ? feature.geometry.coordinates : null;
+
+            this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates, detailedCoords);
             this.activeTrains.set(lineCode, []);
             this.lastInjectionTime.set(lineCode, -999);
         });

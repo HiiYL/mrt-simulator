@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { generateRouteGeoJSON, generateStationsGeoJSON, MRT_LINES } from '../data/mrt-routes.js';
+import { generateStationsGeoJSON, MRT_LINES } from '../data/mrt-routes.js';
 import { DEPOTS } from '../data/depots.js';
+import MRT_GEOJSON from '../data/singapore-mrt-fixed.json';
 
 // Singapore bounds - restrict map to Singapore only
 const SINGAPORE_BOUNDS = [
@@ -202,7 +203,8 @@ function MapViewComponent({ trains }) {
 export const MapView = memo(MapViewComponent);
 
 function addMRTRoutes(map) {
-    const routeGeoJSON = generateRouteGeoJSON();
+    // Use real world geometry
+    const routeGeoJSON = MRT_GEOJSON;
 
     map.addSource('mrt-routes', {
         type: 'geojson',
@@ -210,18 +212,22 @@ function addMRTRoutes(map) {
     });
 
     Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+        // Match GeoJSON property 'code' with our lineCode
+        // Note: GeoJSON uses 'code' (e.g. 'NS', 'EW')
+        const filter = ['==', ['get', 'code'], lineCode];
+
         // Glow effect for routes
         map.addLayer({
             id: `mrt-glow-${lineCode}`,
             type: 'line',
             source: 'mrt-routes',
-            filter: ['==', ['get', 'line'], lineCode],
+            filter: filter,
             layout: {
                 'line-join': 'round',
                 'line-cap': 'round'
             },
             paint: {
-                'line-color': line.color,
+                'line-color': line.color, // Use our config color to ensure consistency
                 'line-width': 10,
                 'line-opacity': 0.2,
                 'line-blur': 3
@@ -233,7 +239,7 @@ function addMRTRoutes(map) {
             id: `mrt-outline-${lineCode}`,
             type: 'line',
             source: 'mrt-routes',
-            filter: ['==', ['get', 'line'], lineCode],
+            filter: filter,
             layout: {
                 'line-join': 'round',
                 'line-cap': 'round'
@@ -250,7 +256,7 @@ function addMRTRoutes(map) {
             id: `mrt-line-${lineCode}`,
             type: 'line',
             source: 'mrt-routes',
-            filter: ['==', ['get', 'line'], lineCode],
+            filter: filter,
             layout: {
                 'line-join': 'round',
                 'line-cap': 'round'

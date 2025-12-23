@@ -1,0 +1,3 @@
+[submodule "src/data/sgraildata"]
+	path = src/data/sgraildata
+	url = https://github.com/cheeaun/sgraildata

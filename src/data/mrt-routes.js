@@ -301,42 +301,8 @@ export const MRT_LINES = {
 };
 
 // Generate route polylines from station data
-export function generateRouteGeoJSON() {
-    const features = [];
-
-    Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
-        let coordinates;
-
-        // If exact loop path is defined, use that for the visual line
-        if (line.loopPath) {
-            coordinates = line.loopPath.map(code => {
-                const station = line.stations.find(s => s.code === code);
-                return station ? [station.lng, station.lat] : null;
-            }).filter(c => c !== null);
-        } else {
-            // Otherwise use sequential list of stations
-            coordinates = line.stations.map(s => [s.lng, s.lat]);
-        }
-
-        features.push({
-            type: 'Feature',
-            properties: {
-                line: lineCode,
-                name: line.name,
-                color: line.color
-            },
-            geometry: {
-                type: 'LineString',
-                coordinates
-            }
-        });
-    });
-
-    return {
-        type: 'FeatureCollection',
-        features
-    };
-}
+// Route geometry is now loaded from singapore-mrt-fixed.json via MapView
+// Function `generateRouteGeoJSON` has been removed.
 
 // Generate station points GeoJSON
 export function generateStationsGeoJSON() {

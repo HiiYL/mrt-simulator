@@ -1,205 +1,179 @@
-// Route Interpolator - Calculates train positions along route polylines
-import * as turf from '@turf/turf';
-
 export class RouteInterpolator {
-    constructor(coordinates) {
-        // coordinates: [[lng, lat], [lng, lat], ...] - these are station coordinates
-        this.coordinates = coordinates;
-        this.lineString = turf.lineString(coordinates);
-        this.totalLength = turf.length(this.lineString, { units: 'kilometers' });
+    constructor(stations, detailedPathCoords = null) {
+        this.stations = stations;
+        this.detailedPath = detailedPathCoords;
+        this.stationIndices = [];
 
-        // Pre-calculate segment distances for faster lookup
-        this.segmentDistances = this.calculateSegmentDistances();
-    }
-
-    calculateSegmentDistances() {
-        const distances = [0];
-        let cumulative = 0;
-
-        for (let i = 1; i < this.coordinates.length; i++) {
-            const from = turf.point(this.coordinates[i - 1]);
-            const to = turf.point(this.coordinates[i]);
-            const dist = turf.distance(from, to, { units: 'kilometers' });
-            cumulative += dist;
-            distances.push(cumulative);
+        if (this.detailedPath) {
+            this.mapStationsToDetailedPath();
         }
-
-        return distances;
     }
 
-    // Get position at a fraction along the route (0 to 1)
-    getPositionAtFraction(fraction) {
-        // Clamp fraction to valid range
-        fraction = Math.max(0, Math.min(1, fraction));
-
-        const targetDistance = fraction * this.totalLength;
-        const point = turf.along(this.lineString, targetDistance, { units: 'kilometers' });
-
-        // Calculate heading (bearing)
-        const bearing = this.getBearingAtFraction(fraction);
-
-        return {
-            lng: point.geometry.coordinates[0],
-            lat: point.geometry.coordinates[1],
-            bearing,
-            fraction
-        };
-    }
-
-    // Get the bearing (heading) at a fraction along the route
-    getBearingAtFraction(fraction) {
-        const epsilon = 0.001; // Small offset for bearing calculation
-
-        const pos1 = this.getPointAtFraction(Math.max(0, fraction - epsilon));
-        const pos2 = this.getPointAtFraction(Math.min(1, fraction + epsilon));
-
-        return turf.bearing(
-            turf.point([pos1.lng, pos1.lat]),
-            turf.point([pos2.lng, pos2.lat])
-        );
-    }
-
-    // Get bearing at a specific station index
-    getBearingAtStation(stationIndex, reverse = false) {
-        const stations = this.coordinates.length;
-
-        // For first station, use bearing to next station
-        if (stationIndex === 0) {
-            const from = this.coordinates[0];
-            const to = this.coordinates[1];
-            const bearing = turf.bearing(turf.point(from), turf.point(to));
-            return reverse ? (bearing + 180) % 360 : bearing;
-        }
-
-        // For last station, use bearing from previous station
-        if (stationIndex >= stations - 1) {
-            const from = this.coordinates[stations - 2];
-            const to = this.coordinates[stations - 1];
-            const bearing = turf.bearing(turf.point(from), turf.point(to));
-            return reverse ? (bearing + 180) % 360 : bearing;
-        }
-
-        // For middle stations, average the approach and departure bearings
-        const prev = this.coordinates[stationIndex - 1];
-        const curr = this.coordinates[stationIndex];
-        const next = this.coordinates[stationIndex + 1];
-
-        const bearingIn = turf.bearing(turf.point(prev), turf.point(curr));
-        const bearingOut = turf.bearing(turf.point(curr), turf.point(next));
-
-        // Average the bearings (handling the circular nature of angles)
-        let avgBearing = (bearingIn + bearingOut) / 2;
-
-        // If the bearings are more than 180 apart, adjust
-        if (Math.abs(bearingIn - bearingOut) > 180) {
-            avgBearing = (avgBearing + 180) % 360;
-        }
-
-        return reverse ? (avgBearing + 180) % 360 : avgBearing;
-    }
-
-    // Get exact position at a station (snapped to station coordinates)
-    getPositionAtStation(stationIndex, reverse = false) {
-        const idx = Math.max(0, Math.min(stationIndex, this.coordinates.length - 1));
-        const coord = this.coordinates[idx];
-
-        return {
-            lng: coord[0],
-            lat: coord[1],
-            bearing: this.getBearingAtStation(stationIndex, reverse),
-            fraction: idx / (this.coordinates.length - 1)
-        };
-    }
-
-    // Helper to get just the point without bearing (avoids recursion)
-    getPointAtFraction(fraction) {
-        fraction = Math.max(0, Math.min(1, fraction));
-        const targetDistance = fraction * this.totalLength;
-        const point = turf.along(this.lineString, targetDistance, { units: 'kilometers' });
-        return {
-            lng: point.geometry.coordinates[0],
-            lat: point.geometry.coordinates[1]
-        };
-    }
-
-    // Get the station index for a given fraction
-    getStationIndex(fraction) {
-        const targetDistance = fraction * this.totalLength;
-
-        for (let i = 0; i < this.segmentDistances.length - 1; i++) {
-            if (targetDistance <= this.segmentDistances[i + 1]) {
-                return i;
-            }
-        }
-
-        return this.coordinates.length - 1;
-    }
-
-    // Get total route length in km
-    getTotalLength() {
-        return this.totalLength;
-    }
-
-    // Get number of stations
     getStationCount() {
-        return this.coordinates.length;
+        return this.stations.length;
     }
 
-    // Get position between two stations with proper distance-based interpolation
-    // fromStation: the station index the train departed from
-    // toStation: the station index the train is traveling to  
-    // progress: 0 to 1 representing how far along the segment (can be eased)
-    // reverse: if true, the train is traveling in reverse direction
-    getPositionBetweenStations(fromStation, toStation, progress, reverse = false) {
-        const startDist = this.segmentDistances[fromStation];
-        const endDist = this.segmentDistances[toStation];
-        const segmentDist = endDist - startDist;
+    // Find the closest point on the detailed path for each station
+    mapStationsToDetailedPath() {
+        this.stationIndices = this.stations.map(station => {
+            let minDist = Infinity;
+            let closestIndex = -1;
 
-        // Calculate actual distance along the segment
-        const currentDist = startDist + (segmentDist * progress);
-
-        // Convert to overall fraction of route
-        const fraction = currentDist / this.totalLength;
-
-        // Get position using turf
-        const point = turf.along(this.lineString, currentDist, { units: 'kilometers' });
-
-        // Get bearing
-        const bearing = this.getBearingAtFraction(fraction);
-        const finalBearing = reverse ? (bearing + 180) % 360 : bearing;
-
-        return {
-            lng: point.geometry.coordinates[0],
-            lat: point.geometry.coordinates[1],
-            bearing: finalBearing,
-            fraction
-        };
+            for (let i = 0; i < this.detailedPath.length; i++) {
+                const p = this.detailedPath[i];
+                // Simple Euclidean distance squared is enough for comparison
+                const d = Math.pow(p[0] - station[0], 2) + Math.pow(p[1] - station[1], 2);
+                if (d < minDist) {
+                    minDist = d;
+                    closestIndex = i;
+                }
+            }
+            return closestIndex;
+        });
     }
 
-    // Get segment distance in km
-    getSegmentDistance(segmentIndex) {
-        if (segmentIndex < 0 || segmentIndex >= this.segmentDistances.length - 1) {
-            return 0;
-        }
-        return this.segmentDistances[segmentIndex + 1] - this.segmentDistances[segmentIndex];
-    }
-
-    // Calculate travel time for a specific segment based on line's total duration
-    // totalDurationMinutes: Total time for the entire line (e.g. 70 mins)
-    // segmentIndex: Index of the segment (0 to stationCount-2)
-    getSegmentDuration(totalDurationMinutes, segmentIndex) {
-        if (segmentIndex < 0 || segmentIndex >= this.segmentDistances.length - 1) {
-            return 2; // Default fallback
+    // Get position at a specific t (0 to 1) between station i and j
+    getPositionBetweenStations(i, j, t, reverse = false) {
+        // If no detailed path, fallback to straight line
+        if (!this.detailedPath || this.stationIndices.length === 0) {
+            return this.getStraightLinePosition(i, j, t);
         }
 
-        const startDist = this.segmentDistances[segmentIndex];
-        const endDist = this.segmentDistances[segmentIndex + 1];
-        const segmentDist = endDist - startDist;
+        const idxA = this.stationIndices[i];
+        const idxB = this.stationIndices[j];
 
-        // Proportion of total length
-        const fraction = segmentDist / this.totalLength;
+        // Safety check
+        if (idxA === -1 || idxB === -1) {
+            return this.getStraightLinePosition(i, j, t);
+        }
 
-        // Time for this segment
-        return fraction * totalDurationMinutes;
+        let path = [];
+
+        // Determine range and direction
+        const startIdx = idxA;
+        const endIdx = idxB;
+
+        // Extract subpath from LineString
+        if (startIdx <= endIdx) {
+            path = this.detailedPath.slice(startIdx, endIdx + 1);
+        } else {
+            // Traverse backwards through the geometry array
+            path = this.detailedPath.slice(endIdx, startIdx + 1).reverse();
+        }
+
+        // Handle edge case: Start and End are same point (distance 0)
+        if (path.length < 2) {
+            const p = path[0] || this.stations[i];
+            return { lng: p[0], lat: p[1], bearing: 0 };
+        }
+
+        // Interpolate
+        return this.interpolateAlongPath(path, t);
+    }
+
+    getStraightLinePosition(i, j, t) {
+        const p1 = this.stations[i];
+        const p2 = this.stations[j];
+        const lng = p1[0] + (p2[0] - p1[0]) * t;
+        const lat = p1[1] + (p2[1] - p1[1]) * t;
+        const bearing = this.getBearing(p1, p2);
+        return { lng, lat, bearing };
+    }
+
+    interpolateAlongPath(path, t) {
+        // 1. Calculate total length of this segment
+        const dists = [];
+        let totalDist = 0;
+        for (let k = 0; k < path.length - 1; k++) {
+            const d = this.getDistance(path[k], path[k + 1]);
+            dists.push(d);
+            totalDist += d;
+        }
+
+        if (totalDist === 0) return { lng: path[0][0], lat: path[0][1], bearing: 0 };
+
+        // 2. Find target distance
+        const targetDist = totalDist * t;
+
+        // 3. Walk to find specific segment
+        let currentDist = 0;
+        for (let k = 0; k < dists.length; k++) {
+            if (currentDist + dists[k] >= targetDist) {
+                // Found segment k
+                const segmentProgress = (targetDist - currentDist) / dists[k];
+                const p1 = path[k];
+                const p2 = path[k + 1];
+
+                const lng = p1[0] + (p2[0] - p1[0]) * segmentProgress;
+                const lat = p1[1] + (p2[1] - p1[1]) * segmentProgress;
+
+                // Bearing of this micro-segment
+                const bearing = this.getBearing(p1, p2);
+
+                return { lng, lat, bearing };
+            }
+            currentDist += dists[k];
+        }
+
+        // Fallback (t=1)
+        const end = path[path.length - 1];
+        const lastP = path.length > 1 ? path[path.length - 2] : end;
+        return { lng: end[0], lat: end[1], bearing: this.getBearing(lastP, end) };
+    }
+
+    getDistance(p1, p2) {
+        return Math.sqrt(Math.pow(p1[0] - p2[0], 2) + Math.pow(p1[1] - p2[1], 2));
+    }
+
+    getBearing(p1, p2) {
+        const toRad = degree => degree * Math.PI / 180;
+        const toDeg = radian => radian * 180 / Math.PI;
+
+        const lng1 = toRad(p1[0]);
+        const lat1 = toRad(p1[1]);
+        const lng2 = toRad(p2[0]);
+        const lat2 = toRad(p2[1]);
+
+        const y = Math.sin(lng2 - lng1) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) -
+            Math.sin(lat1) * Math.cos(lat2) * Math.cos(lng2 - lng1);
+        const bearing = toDeg(Math.atan2(y, x));
+        return (bearing + 360) % 360;
+    }
+
+    getBearingAtStation(stationIndex, reverse) {
+        if (!this.detailedPath || this.stationIndices.length === 0) return 0;
+
+        const idx = this.stationIndices[stationIndex];
+        if (idx === -1) return 0;
+
+        const cnt = this.detailedPath.length;
+
+        // Determine local tangent on geometry
+        let pPrev, pNext;
+
+        if (idx > 0) pPrev = this.detailedPath[idx - 1];
+        else pPrev = this.detailedPath[idx]; // Start point
+
+        if (idx < cnt - 1) pNext = this.detailedPath[idx + 1];
+        else pNext = this.detailedPath[idx]; // End point
+
+        if (idx === 0) pNext = this.detailedPath[1];
+        if (idx === cnt - 1) pPrev = this.detailedPath[cnt - 2];
+
+        let bearing = this.getBearing(pPrev, pNext);
+
+        // Check direction relative to stations
+        const ascending = this.stationIndices[this.stationIndices.length - 1] > this.stationIndices[0];
+
+        if (!ascending) {
+            bearing = (bearing + 180) % 360;
+        }
+
+        if (reverse) {
+            bearing = (bearing + 180) % 360;
+        }
+
+        return bearing;
     }
 }
