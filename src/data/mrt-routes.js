@@ -9,7 +9,7 @@ export const MRT_LINES = {
             { code: 'NS1', name: 'Jurong East', lat: 1.3329, lng: 103.7422 },
             { code: 'NS2', name: 'Bukit Batok', lat: 1.3490, lng: 103.7495 },
             { code: 'NS3', name: 'Bukit Gombak', lat: 1.3587, lng: 103.7519 },
-            { code: 'NS4', name: 'Choa Chu Kang', lat: 1.3853, lng: 103.7444 },
+            { code: 'NS4', name: 'Choa Chu Kang', lat: 1.38551, lng: 103.74425 }, // Unified with BP1
             { code: 'NS5', name: 'Yew Tee', lat: 1.3973, lng: 103.7475 },
             { code: 'NS7', name: 'Kranji', lat: 1.4251, lng: 103.7620 },
             { code: 'NS8', name: 'Marsiling', lat: 1.4326, lng: 103.7740 },
@@ -92,8 +92,8 @@ export const MRT_LINES = {
             { code: 'NE13', name: 'Kovan', lat: 1.3600, lng: 103.8850 },
             { code: 'NE14', name: 'Hougang', lat: 1.3715, lng: 103.8926 },
             { code: 'NE15', name: 'Buangkok', lat: 1.3831, lng: 103.8930 },
-            { code: 'NE16', name: 'Sengkang', lat: 1.3917, lng: 103.8954 },
-            { code: 'NE17', name: 'Punggol', lat: 1.4054, lng: 103.9023 },
+            { code: 'NE16', name: 'Sengkang', lat: 1.39178, lng: 103.89549 }, // Unified with STC
+            { code: 'NE17', name: 'Punggol', lat: 1.40537, lng: 103.90230 }, // Unified with PTC
         ]
     },
     CC: {
@@ -134,7 +134,7 @@ export const MRT_LINES = {
         name: 'Downtown Line',
         color: '#005EC4',
         stations: [
-            { code: 'DT1', name: 'Bukit Panjang', lat: 1.3784, lng: 103.7619 },
+            { code: 'DT1', name: 'Bukit Panjang', lat: 1.3784, lng: 103.7633 }, // Unified with BP6
             { code: 'DT2', name: 'Cashew', lat: 1.3690, lng: 103.7644 },
             { code: 'DT3', name: 'Hillview', lat: 1.3625, lng: 103.7675 },
             { code: 'DT5', name: 'Beauty World', lat: 1.3416, lng: 103.7760 },
@@ -217,13 +217,21 @@ export const MRT_LINES = {
         name: 'Bukit Panjang LRT',
         color: '#748477', // Grey
         isLRT: true,
+        // Define exact visual path for BP Line + Loop
+        // BP1 -> BP6 -> Loop (BP7..BP13) -> BP6
+        loopPath: [
+            'BP1', 'BP2', 'BP3', 'BP4', 'BP5', 'BP6',
+            'BP7', 'BP8', 'BP9', 'BP10', 'BP11', 'BP12', 'BP13',
+            'BP6', // Close the loop back to BP6
+            'BP5', 'BP4', 'BP3', 'BP2', 'BP1' // Return to CCK
+        ],
         stations: [
             { code: 'BP1', name: 'Choa Chu Kang', lat: 1.38551, lng: 103.74425 }, // Interchange with NS4
             { code: 'BP2', name: 'South View', lat: 1.38031, lng: 103.74522 },
             { code: 'BP3', name: 'Keat Hong', lat: 1.37867, lng: 103.74893 },
             { code: 'BP4', name: 'Teck Whye', lat: 1.37687, lng: 103.75294 },
             { code: 'BP5', name: 'Phoenix', lat: 1.37848, lng: 103.75762 },
-            { code: 'BP6', name: 'Bukit Panjang', lat: 1.37831, lng: 103.76288 }, // Interchange with DT1
+            { code: 'BP6', name: 'Bukit Panjang', lat: 1.3784, lng: 103.7633 }, // Interchange with DT1 (Unified coordinates)
             { code: 'BP7', name: 'Petir', lat: 1.37773, lng: 103.76715 },
             { code: 'BP8', name: 'Pending', lat: 1.37597, lng: 103.77138 },
             { code: 'BP9', name: 'Bangkit', lat: 1.38003, lng: 103.77263 },
@@ -231,13 +239,17 @@ export const MRT_LINES = {
             { code: 'BP11', name: 'Segar', lat: 1.38768, lng: 103.76951 },
             { code: 'BP12', name: 'Jelapang', lat: 1.38646, lng: 103.76427 },
             { code: 'BP13', name: 'Senja', lat: 1.38272, lng: 103.76240 },
-            { code: 'BP14', name: 'Ten Mile Junction', lat: 1.38039, lng: 103.75852 },
         ]
     },
     SK: {
         name: 'Sengkang LRT',
         color: '#748477', // Grey
         isLRT: true,
+        // Define exact visual path for figure-8 loop
+        loopPath: [
+            'STC', 'SW1', 'SW2', 'SW3', 'SW4', 'SW5', 'SW6', 'SW7', 'SW8', 'STC', // West Loop
+            'STC', 'SE1', 'SE2', 'SE3', 'SE4', 'SE5', 'STC'  // East Loop
+        ],
         stations: [
             // West Loop
             { code: 'STC', name: 'Sengkang', lat: 1.39178, lng: 103.89549 }, // Transfer station (NE16)
@@ -261,6 +273,11 @@ export const MRT_LINES = {
         name: 'Punggol LRT',
         color: '#748477', // Grey
         isLRT: true,
+        // Define exact visual path for figure-8 loop
+        loopPath: [
+            'PTC', 'PW1', 'PW2', 'PW3', 'PW4', 'PW5', 'PW6', 'PW7', 'PTC', // West Loop
+            'PTC', 'PE1', 'PE2', 'PE3', 'PE4', 'PE5', 'PE6', 'PE7', 'PTC'  // East Loop
+        ],
         stations: [
             // West Loop
             { code: 'PTC', name: 'Punggol', lat: 1.40537, lng: 103.90230 }, // Transfer station (NE17)
@@ -288,7 +305,18 @@ export function generateRouteGeoJSON() {
     const features = [];
 
     Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
-        const coordinates = line.stations.map(s => [s.lng, s.lat]);
+        let coordinates;
+
+        // If exact loop path is defined, use that for the visual line
+        if (line.loopPath) {
+            coordinates = line.loopPath.map(code => {
+                const station = line.stations.find(s => s.code === code);
+                return station ? [station.lng, station.lat] : null;
+            }).filter(c => c !== null);
+        } else {
+            // Otherwise use sequential list of stations
+            coordinates = line.stations.map(s => [s.lng, s.lat]);
+        }
 
         features.push({
             type: 'Feature',

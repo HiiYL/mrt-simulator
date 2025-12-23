@@ -1,6 +1,6 @@
 // Inter-station travel times in minutes (from LTA first train timings)
 // Each array represents travel time FROM station[i] TO station[i+1]
-// Generated: 2025-12-23T08:53:02.869Z
+// Generated: 2025-12-23T09:05:20.323Z
 
 export const INTER_STATION_TIMES = {
   "EW": [
@@ -195,20 +195,26 @@ export const INTER_STATION_TIMES = {
     2
   ],
   "SK": [
-    1,
-    1,
-    1,
-    2,
     2,
     1,
-    2,
-    2,
+    1,
+    1,
     2,
     2,
     1,
+    2,
+    2,
+    2,
+    2,
+    2,
+    1,
+    2,
     2
   ],
   "PG": [
+    2,
+    2,
+    2,
     2,
     2,
     2,
