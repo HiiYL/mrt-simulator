@@ -26,8 +26,11 @@ class NetworkModelService {
             // 1. Get Path Geometry
             // Try to find high-res track data from GeoJSON
             // Support multiple features (e.g., SK has two loops as separate features)
+            // Fix: Check 'code' (from fixed GeoJSON), 'line' (from generated), or 'name'
             const features = MRT_GEOJSON.features.filter(f =>
-                f.properties.line === lineCode || f.properties.name === lineConfig.name
+                f.properties.code === lineCode ||
+                f.properties.line === lineCode ||
+                f.properties.name === lineConfig.name
             );
 
             let detailedPath = [];
