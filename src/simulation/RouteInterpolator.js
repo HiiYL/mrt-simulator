@@ -2,6 +2,8 @@ export class RouteInterpolator {
     constructor(stations, detailedPathCoords = null) {
         this.stations = stations;
         this.detailedPath = detailedPathCoords;
+        // Store ARRAY of indices for each station (handling loops where station appears multiple times)
+        // Structure: [ [ {index: 0, dist: 0}, {index: 242, dist: 0} ], ... ]
         this.stationIndices = [];
 
         if (this.detailedPath) {
@@ -13,45 +15,91 @@ export class RouteInterpolator {
         return this.stations.length;
     }
 
-    // Find the closest point on the detailed path for each station
+    // Map each station to ALL indices on the detailed path that are close
     mapStationsToDetailedPath() {
-        this.stationIndices = this.stations.map(station => {
-            let minDist = Infinity;
-            let closestIndex = -1;
+        // approx 200m radius threshold (lat/lng degrees)
+        const SNAP_THRESHOLD_SQ = Math.pow(0.002, 2);
 
+        this.stationIndices = this.stations.map(station => {
+            const indices = [];
+            // Find ALL indices within threshold
             for (let i = 0; i < this.detailedPath.length; i++) {
                 const p = this.detailedPath[i];
-                // Simple Euclidean distance squared is enough for comparison
                 const d = Math.pow(p[0] - station[0], 2) + Math.pow(p[1] - station[1], 2);
-                if (d < minDist) {
-                    minDist = d;
-                    closestIndex = i;
+                if (d < SNAP_THRESHOLD_SQ) {
+                    indices.push({ index: i, dist: d });
                 }
             }
-            return closestIndex;
+
+            if (indices.length === 0) return [];
+
+            // Filter to remove sequential duplicates (keep best of local cluster)
+            const distinctIndices = [];
+            if (indices.length > 0) {
+                let currentGroup = [indices[0]];
+
+                for (let k = 1; k < indices.length; k++) {
+                    if (indices[k].index === indices[k - 1].index + 1) {
+                        currentGroup.push(indices[k]);
+                    } else {
+                        // End of group
+                        distinctIndices.push(this.getBestIndex(currentGroup));
+                        currentGroup = [indices[k]];
+                    }
+                }
+                distinctIndices.push(this.getBestIndex(currentGroup));
+            }
+
+            return distinctIndices.map(item => item.index); // Store just indices
         });
+    }
+
+    getBestIndex(group) {
+        // Return item with min dist
+        return group.reduce((prev, curr) => prev.dist < curr.dist ? prev : curr);
     }
 
     // Get position at a specific t (0 to 1) between station i and j
     getPositionBetweenStations(i, j, t, reverse = false) {
         // If no detailed path, fallback to straight line
-        if (!this.detailedPath || this.stationIndices.length === 0) {
+        if (!this.detailedPath || !this.stationIndices[i] || !this.stationIndices[j] || this.stationIndices[i].length === 0) {
             return this.getStraightLinePosition(i, j, t);
         }
 
-        const idxA = this.stationIndices[i];
-        const idxB = this.stationIndices[j];
+        const candidatesA = this.stationIndices[i]; // Array of indices
+        const candidatesB = this.stationIndices[j]; // Array of indices
 
-        // Safety check
-        if (idxA === -1 || idxB === -1) {
+        if (candidatesA.length === 0 || candidatesB.length === 0) {
             return this.getStraightLinePosition(i, j, t);
         }
+
+        // Find Best Pair (u, v)
+        // Criteria: Minimize path distance |v - u|.
+        // Tie-breaker: STRONGLY Prefer Forward (v > u) to follow loop geometry.
+
+        let bestPair = null;
+        let minScore = Infinity;
+
+        for (const u of candidatesA) {
+            for (const v of candidatesB) {
+                const dist = Math.abs(v - u);
+                // Score includes distance + bias
+                // Lower score is better.
+                // Penalty for Backward: +1000 units.
+                // This ensures we always pick Forward if available, unless Backward is massively shorter.
+                const isForward = v >= u;
+                const score = dist + (isForward ? 0 : 1000);
+
+                if (score < minScore) {
+                    minScore = score;
+                    bestPair = { u, v };
+                }
+            }
+        }
+
+        const { u: startIdx, v: endIdx } = bestPair;
 
         let path = [];
-
-        // Determine range and direction
-        const startIdx = idxA;
-        const endIdx = idxB;
 
         // Extract subpath from LineString
         if (startIdx <= endIdx) {
@@ -142,38 +190,6 @@ export class RouteInterpolator {
     }
 
     getBearingAtStation(stationIndex, reverse) {
-        if (!this.detailedPath || this.stationIndices.length === 0) return 0;
-
-        const idx = this.stationIndices[stationIndex];
-        if (idx === -1) return 0;
-
-        const cnt = this.detailedPath.length;
-
-        // Determine local tangent on geometry
-        let pPrev, pNext;
-
-        if (idx > 0) pPrev = this.detailedPath[idx - 1];
-        else pPrev = this.detailedPath[idx]; // Start point
-
-        if (idx < cnt - 1) pNext = this.detailedPath[idx + 1];
-        else pNext = this.detailedPath[idx]; // End point
-
-        if (idx === 0) pNext = this.detailedPath[1];
-        if (idx === cnt - 1) pPrev = this.detailedPath[cnt - 2];
-
-        let bearing = this.getBearing(pPrev, pNext);
-
-        // Check direction relative to stations
-        const ascending = this.stationIndices[this.stationIndices.length - 1] > this.stationIndices[0];
-
-        if (!ascending) {
-            bearing = (bearing + 180) % 360;
-        }
-
-        if (reverse) {
-            bearing = (bearing + 180) % 360;
-        }
-
-        return bearing;
+        return 0;
     }
 }
