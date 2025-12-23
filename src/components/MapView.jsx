@@ -1,5 +1,4 @@
-// MapView Component - Main map display with MRT routes and trains
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo, useImperativeHandle, forwardRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { generateStationsGeoJSON, MRT_LINES, generateStraightLineGeoJSON } from '../data/mrt-routes.js';
@@ -47,13 +46,47 @@ const MAP_STYLE = {
     ]
 };
 
-function MapViewComponent({ trains }) {
+const MapViewComponent = forwardRef((props, ref) => {
     const mapContainer = useRef(null);
     const mapRef = useRef(null);
     const [isReady, setIsReady] = useState(false);
 
+    // Expose update method to parent
+    useImperativeHandle(ref, () => ({
+        updateTrains: (trains) => {
+            if (!mapRef.current || !mapRef.current.getSource('trains')) return;
+
+            const source = mapRef.current.getSource('trains');
+
+            // Efficiently update data without React reconcile
+            const geojson = {
+                type: 'FeatureCollection',
+                features: trains.map(train => ({
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [train.lng, train.lat]
+                    },
+                    properties: {
+                        id: train.id,
+                        line: train.line,
+                        color: train.color,
+                        lineName: train.lineName,
+                        direction: train.direction,
+                        bearing: train.bearing || 0,
+                        isAtStation: train.isAtStation ? 1 : 0,
+                        stationName: train.stationName || ''
+                    }
+                }))
+            };
+
+            source.setData(geojson);
+        }
+    }));
+
     // Initialize map once on mount
     useEffect(() => {
+        // ... (lines 57-159 unchanged, logic remains same)
         // Prevent double initialization
         if (mapRef.current) return;
         if (!mapContainer.current) return;
@@ -158,39 +191,7 @@ function MapViewComponent({ trains }) {
         };
     }, []);
 
-    // Update train positions when trains change
-    useEffect(() => {
-        if (!isReady || !mapRef.current || !trains) return;
-
-        const map = mapRef.current;
-        const source = map.getSource('trains');
-
-        if (!source) return;
-
-        // Convert trains to GeoJSON with station status
-        const geojson = {
-            type: 'FeatureCollection',
-            features: trains.map(train => ({
-                type: 'Feature',
-                geometry: {
-                    type: 'Point',
-                    coordinates: [train.lng, train.lat]
-                },
-                properties: {
-                    id: train.id,
-                    line: train.line,
-                    color: train.color,
-                    lineName: train.lineName,
-                    direction: train.direction,
-                    bearing: train.bearing || 0,
-                    isAtStation: train.isAtStation ? 1 : 0,
-                    stationName: train.stationName || ''
-                }
-            }))
-        };
-
-        source.setData(geojson);
-    }, [trains, isReady]);
+    // Removed the useEffect for trains prop since we use imperative handle now
 
     return (
         <div
@@ -198,7 +199,7 @@ function MapViewComponent({ trains }) {
             className="map-container"
         />
     );
-}
+});
 
 // Memoize to prevent unnecessary re-renders from parent state changes
 export const MapView = memo(MapViewComponent);

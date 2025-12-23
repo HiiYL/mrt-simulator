@@ -26,12 +26,12 @@ function App() {
   const [displayTime, setDisplayTime] = useState(getInitialTime);
   const [isPlaying, setIsPlaying] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(60);
-  const [trains, setTrains] = useState([]);
   const [stats, setStats] = useState(null);
 
   const simulationEngine = useRef(getSimulationEngine());
   const lastUpdateTime = useRef(Date.now());
   const currentTimeRef = useRef(getInitialTime());
+  const mapViewRef = useRef(null);
 
   // Animation loop - uses refs to avoid re-render cascades
   useEffect(() => {
@@ -57,7 +57,11 @@ function App() {
         // Update train positions directly (no state update)
         const engine = simulationEngine.current;
         const trainPositions = engine.getTrainPositions(currentTimeRef.current);
-        setTrains(trainPositions);
+
+        // Imperatively update map without re-render
+        if (mapViewRef.current) {
+          mapViewRef.current.updateTrains(trainPositions);
+        }
 
         // Only update display time and stats every 100ms to reduce re-renders
         if (timestamp - lastDisplayUpdate > 100) {
@@ -72,7 +76,13 @@ function App() {
 
     // Initial train positions
     const engine = simulationEngine.current;
-    setTrains(engine.getTrainPositions(currentTimeRef.current));
+
+    // Initial update
+    const initialTrains = engine.getTrainPositions(currentTimeRef.current);
+    if (mapViewRef.current) {
+      mapViewRef.current.updateTrains(initialTrains);
+    }
+
     setStats(engine.getStatistics(currentTimeRef.current));
 
     animationFrame = requestAnimationFrame(animate);
@@ -88,7 +98,12 @@ function App() {
     lastUpdateTime.current = Date.now();
 
     const engine = simulationEngine.current;
-    setTrains(engine.getTrainPositions(time));
+    const currentTrains = engine.getTrainPositions(time);
+
+    if (mapViewRef.current) {
+      mapViewRef.current.updateTrains(currentTrains);
+    }
+
     setStats(engine.getStatistics(time));
   }, []);
 
@@ -104,7 +119,7 @@ function App() {
 
   return (
     <div className="app">
-      <MapView trains={trains} />
+      <MapView ref={mapViewRef} />
 
       <InfoPanel stats={stats} currentTime={displayTime} />
 

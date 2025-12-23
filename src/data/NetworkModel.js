@@ -20,31 +20,17 @@ class NetworkModelService {
             let detailedPath = [];
 
             if (features.length > 0) {
-                // Collect all segments
-                const segments = [];
+                // Collect and Stitch segments
+                const rawSegments = [];
                 features.forEach(feature => {
                     if (feature.geometry.type === 'LineString') {
-                        segments.push(feature.geometry.coordinates);
+                        rawSegments.push(feature.geometry.coordinates);
                     } else if (feature.geometry.type === 'MultiLineString') {
-                        feature.geometry.coordinates.forEach(seg => segments.push(seg));
+                        feature.geometry.coordinates.forEach(seg => rawSegments.push(seg));
                     }
                 });
 
-                // Merge segments if they are connected (or just concat them for now)
-                // For SK (Figure 8), they match at STC. Concat works.
-                // For EW (Main + Branch), if we concat, we get Main -> Branch jump.
-                // But EW is already split into EW and CG in data (by my fix).
-                // So this logic mainly targets SK/PG loops.
-                // Flatten segments into one single path array
-
-                // Heuristic: If we have multiple segments, we try to order them?
-                // For now, naive concat. SK features are identical start/end so order doesn't matter much
-                // unless direction matters.
-                segments.forEach(seg => {
-                    // Check if we need to insert a separator? 
-                    // No, RouteInterpolator just iterates points.
-                    detailedPath.push(...seg);
-                });
+                detailedPath = this.stitchSegments(rawSegments);
             }
 
             // 2. Align Stations (Snap to Vertex)
@@ -136,6 +122,80 @@ class NetworkModelService {
             type: 'FeatureCollection',
             features: features
         };
+    }
+    // Intelligent Segment Stitching
+    // Greedy approach: Start with a segment, find the closest endpoint of another segment, attach, repeat.
+    stitchSegments(segments) {
+        if (!segments || segments.length === 0) return [];
+        if (segments.length === 1) return segments[0];
+
+        const pool = [...segments]; // Copy of segments to consume
+        const orderedPath = [];
+
+        // Heuristic: Start with the longest segment? Or just the first one?
+        // Let's start with the first one in the list as the 'anchor'.
+        let currentSegment = pool.shift();
+        orderedPath.push(...currentSegment);
+
+        // Keep finding the next segment that connects to the LAST point of orderedPath
+        while (pool.length > 0) {
+            const tail = orderedPath[orderedPath.length - 1];
+
+            let bestIdx = -1;
+            let bestDist = Infinity;
+            let shouldReverse = false;
+
+            // Find closest candidate
+            for (let i = 0; i < pool.length; i++) {
+                const seg = pool[i];
+                const start = seg[0];
+                const end = seg[seg.length - 1];
+
+                // Dist from tail to start
+                const dStart = this.getDistSq(tail, start);
+                // Dist from tail to end (maybe segment is reversed)
+                const dEnd = this.getDistSq(tail, end);
+
+                if (dStart < bestDist) {
+                    bestDist = dStart;
+                    bestIdx = i;
+                    shouldReverse = false;
+                }
+                if (dEnd < bestDist) {
+                    bestDist = dEnd;
+                    bestIdx = i;
+                    shouldReverse = true;
+                }
+            }
+
+            // Connection Threshold (approx 50m?) 
+            // If the best match is too far, it might be a disjoint section (like Changi Line vs EWL Main if they were one feature)
+            // But here we just want to best-effort stitch.
+            if (bestIdx !== -1) {
+                const bestSeg = pool[bestIdx];
+                // Remove from pool
+                pool.splice(bestIdx, 1);
+
+                // If shouldReverse, we reverse the segment before appending
+                const segmentToAdd = shouldReverse ? [...bestSeg].reverse() : bestSeg;
+
+                // If distance is > 0 but small, we just append.
+                // If distance is huge, we might be "jumping" (teleporting). 
+                // But for detailed path, we just push the points. 
+                // Ideally we should insert a "gap" if they are disconnected, but our array is a single LineString.
+                // We'll trust the pool logic to find neighbors.
+                orderedPath.push(...segmentToAdd);
+            } else {
+                // Should not happen if pool > 0, unless logical error
+                break;
+            }
+        }
+
+        return orderedPath;
+    }
+
+    getDistSq(p1, p2) {
+        return Math.pow(p1[0] - p2[0], 2) + Math.pow(p1[1] - p2[1], 2);
     }
 }
 
