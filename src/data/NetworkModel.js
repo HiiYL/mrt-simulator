@@ -13,24 +13,29 @@ class NetworkModelService {
         if (this.initialized) return;
 
         Object.entries(MRT_LINES).forEach(([lineCode, lineConfig]) => {
-            // 1. Get raw geometry
+
+            // Determine the sequence of stations to visit
+            // If the line has a defined loopPath (like LRTs), use that sequence.
+            let stationsForPath = lineConfig.stations;
+            if (lineConfig.loopPath && Array.isArray(lineConfig.loopPath)) {
+                stationsForPath = lineConfig.loopPath.map(code =>
+                    lineConfig.stations.find(s => s.code === code)
+                ).filter(s => s); // Filter out any missing codes
+            }
+
+            // 1. Get Path Geometry
+            // Try to find high-res track data from GeoJSON
             // Support multiple features (e.g., SK has two loops as separate features)
-            const features = MRT_GEOJSON.features.filter(f => f.properties.code === lineCode);
+            const features = MRT_GEOJSON.features.filter(f =>
+                f.properties.line === lineCode || f.properties.name === lineConfig.name
+            );
 
             let detailedPath = [];
 
             if (features.length > 0) {
-                // Collect and Stitch segments
-                const rawSegments = [];
-                features.forEach(feature => {
-                    if (feature.geometry.type === 'LineString') {
-                        rawSegments.push(feature.geometry.coordinates);
-                    } else if (feature.geometry.type === 'MultiLineString') {
-                        feature.geometry.coordinates.forEach(seg => rawSegments.push(seg));
-                    }
-                });
-
-                detailedPath = this.stitchSegments(rawSegments);
+                // Determine path by tracing station-to-station on the graph
+                // This ensures we follow the logical order and ignore disconnected spurs (like Marina Bay on CC line if not in station list)
+                detailedPath = this.generateDetailedPath(lineCode, stationsForPath, features);
             }
 
             // 2. Align Stations (Snap to Vertex)
@@ -123,75 +128,199 @@ class NetworkModelService {
             features: features
         };
     }
-    // Intelligent Segment Stitching
-    // Greedy approach: Start with a segment, find the closest endpoint of another segment, attach, repeat.
-    stitchSegments(segments) {
-        if (!segments || segments.length === 0) return [];
-        if (segments.length === 1) return segments[0];
+    // -------------------------------------------------------------------------
+    // Graph-Based Path Tracing Logic
+    // -------------------------------------------------------------------------
 
-        const pool = [...segments]; // Copy of segments to consume
-        const orderedPath = [];
+    generateDetailedPath(lineCode, stations, features) {
+        // 1. Build the graph from features
+        const graph = this.buildGraph(features);
 
-        // Heuristic: Start with the longest segment? Or just the first one?
-        // Let's start with the first one in the list as the 'anchor'.
-        let currentSegment = pool.shift();
-        orderedPath.push(...currentSegment);
+        // 2. Trace path between sequential stations
+        let completePath = [];
 
-        // Keep finding the next segment that connects to the LAST point of orderedPath
-        while (pool.length > 0) {
-            const tail = orderedPath[orderedPath.length - 1];
+        // Add start
+        // We will refine this by snapping to graph
+        // If graph is empty, return empty
+        if (Object.keys(graph.nodes).length === 0) return [];
 
-            let bestIdx = -1;
-            let bestDist = Infinity;
-            let shouldReverse = false;
+        for (let i = 0; i < stations.length - 1; i++) {
+            const startStation = stations[i];
+            const endStation = stations[i + 1];
 
-            // Find closest candidate
-            for (let i = 0; i < pool.length; i++) {
-                const seg = pool[i];
-                const start = seg[0];
-                const end = seg[seg.length - 1];
+            const startNode = this.findClosestNode(graph, [startStation.lng, startStation.lat]);
+            const endNode = this.findClosestNode(graph, [endStation.lng, endStation.lat]);
 
-                // Dist from tail to start
-                const dStart = this.getDistSq(tail, start);
-                // Dist from tail to end (maybe segment is reversed)
-                const dEnd = this.getDistSq(tail, end);
-
-                if (dStart < bestDist) {
-                    bestDist = dStart;
-                    bestIdx = i;
-                    shouldReverse = false;
-                }
-                if (dEnd < bestDist) {
-                    bestDist = dEnd;
-                    bestIdx = i;
-                    shouldReverse = true;
-                }
+            if (!startNode || !endNode) {
+                console.warn(`Could not snap stations ${startStation.code} or ${endStation.code} to track graph.`);
+                // Fallback: Straight line
+                completePath.push([startStation.lng, startStation.lat]);
+                completePath.push([endStation.lng, endStation.lat]);
+                continue;
             }
 
-            // Connection Threshold (approx 50m?) 
-            // If the best match is too far, it might be a disjoint section (like Changi Line vs EWL Main if they were one feature)
-            // But here we just want to best-effort stitch.
-            if (bestIdx !== -1) {
-                const bestSeg = pool[bestIdx];
-                // Remove from pool
-                pool.splice(bestIdx, 1);
+            // Pathfind
+            const path = this.findShortestPath(graph, startNode, endNode);
 
-                // If shouldReverse, we reverse the segment before appending
-                const segmentToAdd = shouldReverse ? [...bestSeg].reverse() : bestSeg;
-
-                // If distance is > 0 but small, we just append.
-                // If distance is huge, we might be "jumping" (teleporting). 
-                // But for detailed path, we just push the points. 
-                // Ideally we should insert a "gap" if they are disconnected, but our array is a single LineString.
-                // We'll trust the pool logic to find neighbors.
-                orderedPath.push(...segmentToAdd);
+            if (path) {
+                // If it's not the very first segment, we might duplicate the join point. 
+                // Filter out the first point if it matches the last point of completePath
+                if (completePath.length > 0) {
+                    const last = completePath[completePath.length - 1];
+                    const first = path[0];
+                    if (this.isSamePoint(last, first)) {
+                        path.shift();
+                    }
+                }
+                completePath.push(...path);
             } else {
-                // Should not happen if pool > 0, unless logical error
-                break;
+                console.warn(`No track connection found between ${startStation.code} and ${endStation.code}. Using straight line.`);
+                // Fallback: Straight line
+                completePath.push([startStation.lng, startStation.lat]);
+                completePath.push([endStation.lng, endStation.lat]);
             }
         }
 
-        return orderedPath;
+        return completePath;
+    }
+
+    buildGraph(features) {
+        const nodes = {}; // Key -> Coords
+        const nodesSpatial = []; // Array of { key, coords } for linear search (fast enough for small N)
+        const edges = {}; // Adjacency list: key -> [{ to: key, dist: number, path: [] }]
+
+        // Fuzzy Merging Threshold (~5 meters)
+        // 1 degree lat approx 111km. 5m is 0.000045 deg.
+        const MERGE_THRESHOLD = 0.00005;
+
+        const findMergedNode = (coords) => {
+            // Check if any existing node is close enough
+            for (const n of nodesSpatial) {
+                const distSq = Math.pow(n.coords[0] - coords[0], 2) + Math.pow(n.coords[1] - coords[1], 2);
+                if (distSq < MERGE_THRESHOLD * MERGE_THRESHOLD) {
+                    return n.key;
+                }
+            }
+            return null;
+        };
+
+        const addNode = (coords) => {
+            // Try to find existing close node first
+            const existingKey = findMergedNode(coords);
+            if (existingKey) return existingKey;
+
+            // Else create new
+            const key = coords.map(c => c.toFixed(6)).join(',');
+            nodes[key] = coords;
+            nodesSpatial.push({ key, coords });
+
+            if (!edges[key]) edges[key] = [];
+            return key;
+        };
+
+        const addEdge = (p1, p2) => {
+            const k1 = addNode(p1);
+            const k2 = addNode(p2);
+            if (k1 === k2) return; // Self-loop after merge
+
+            const dist = Math.hypot(p1[0] - p2[0], p1[1] - p2[1]);
+
+            // Undirected graph
+            edges[k1].push({ to: k2, dist: dist });
+            edges[k2].push({ to: k1, dist: dist });
+        };
+
+        features.forEach(feature => {
+            const processLineString = (coords) => {
+                for (let i = 0; i < coords.length - 1; i++) {
+                    addEdge(coords[i], coords[i + 1]);
+                }
+            };
+
+            if (feature.geometry.type === 'LineString') {
+                processLineString(feature.geometry.coordinates);
+            } else if (feature.geometry.type === 'MultiLineString') {
+                feature.geometry.coordinates.forEach(processLineString);
+            }
+        });
+
+        return { nodes, edges };
+    }
+
+    findClosestNode(graph, coords) {
+        let minD = Infinity;
+        let closestKey = null;
+
+        // Optimization: limit search? For MRT, exhaustive search on ~5000 nodes is fine (instant).
+        for (const key in graph.nodes) {
+            const node = graph.nodes[key];
+            const d = Math.pow(node[0] - coords[0], 2) + Math.pow(node[1] - coords[1], 2);
+            if (d < minD) {
+                minD = d;
+                closestKey = key;
+            }
+        }
+
+        // Threshold check (approx 500m)
+        if (minD > 0.000025) return null;
+
+        return closestKey;
+    }
+
+    findShortestPath(graph, startKey, endKey) {
+        if (startKey === endKey) return [graph.nodes[startKey]];
+
+        // Dijkstra
+        const distances = {};
+        const previous = {};
+        const pq = new Set(); // Simple priority queue substitute
+
+        for (const key in graph.nodes) {
+            distances[key] = Infinity;
+            pq.add(key);
+        }
+        distances[startKey] = 0;
+
+        while (pq.size > 0) {
+            // Get min dist node
+            let u = null;
+            let minVal = Infinity;
+            for (const node of pq) {
+                if (distances[node] < minVal) {
+                    minVal = distances[node];
+                    u = node;
+                }
+            }
+
+            if (u === endKey) break; // Found target
+            if (minVal === Infinity) break; // unreachable
+
+            pq.delete(u);
+
+            const neighbors = graph.edges[u] || [];
+            for (const edge of neighbors) {
+                const alt = distances[u] + edge.dist;
+                if (alt < distances[edge.to]) {
+                    distances[edge.to] = alt;
+                    previous[edge.to] = u;
+                }
+            }
+        }
+
+        // Reconstruct path
+        if (distances[endKey] === Infinity) return null;
+
+        const path = [];
+        let curr = endKey;
+        while (curr) {
+            path.unshift(graph.nodes[curr]);
+            curr = previous[curr];
+        }
+        return path;
+    }
+
+    isSamePoint(p1, p2) {
+        return Math.abs(p1[0] - p2[0]) < 1e-9 && Math.abs(p1[1] - p2[1]) < 1e-9;
     }
 
     getDistSq(p1, p2) {

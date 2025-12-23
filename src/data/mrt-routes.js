@@ -651,6 +651,30 @@ export const MRT_LINES = {
             }
         ]
     },
+    "CE": {
+        "name": "Circle Extension",
+        "color": "#FA9E0D",
+        "stations": [
+            {
+                "code": "CC4",
+                "name": "Promenade",
+                "lat": 1.293002853233168,
+                "lng": 103.86108226693159
+            },
+            {
+                "code": "CE1",
+                "name": "Bayfront",
+                "lat": 1.281524695717426,
+                "lng": 103.85896122202968
+            },
+            {
+                "code": "CE2",
+                "name": "Marina Bay",
+                "lat": 1.2766,
+                "lng": 103.8545
+            }
+        ]
+    },
     "DT": {
         "name": "Downtown Line",
         "color": "#005EC4",

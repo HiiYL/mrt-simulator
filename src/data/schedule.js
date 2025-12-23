@@ -52,6 +52,18 @@ export const LINE_SCHEDULES = {
         maxFleet: 64,             // Official fleet: 64 trains
         depots: ['CC1', 'CC11', 'CC29'], // Dhoby Ghaut, Tai Seng (Kim Chuan), Harbourfront
     },
+    CE: {
+        name: 'Circle Extension',
+        operator: 'SMRT',
+        startTime: 6 * 60,        // ~6:00 AM
+        endTime: 23 * 60 + 50,    // ~11:50 PM
+        stationDwellTime: 25,
+        avgTravelTime: 2,
+        peakFrequency: 5,         // Shuttle service less frequent
+        offPeakFrequency: 7,
+        maxFleet: 4,              // Small shuttle fleet
+        depots: ['CC4'],          // Promenade (start)
+    },
     DT: {
         name: 'Downtown Line',
         operator: 'SBS Transit',
