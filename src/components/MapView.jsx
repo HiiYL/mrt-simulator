@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { generateStationsGeoJSON, MRT_LINES } from '../data/mrt-routes.js';
+import { generateStationsGeoJSON, MRT_LINES, generateStraightLineGeoJSON } from '../data/mrt-routes.js';
 import { DEPOTS } from '../data/depots.js';
 import MRT_GEOJSON from '../data/singapore-mrt-fixed.json';
+import STATION_POLYGONS from '../data/station-polygons.json';
 
 // Singapore bounds - restrict map to Singapore only
 const SINGAPORE_BOUNDS = [
@@ -203,12 +204,48 @@ function MapViewComponent({ trains }) {
 export const MapView = memo(MapViewComponent);
 
 function addMRTRoutes(map) {
-    // Use real world geometry
-    const routeGeoJSON = MRT_GEOJSON;
+    // Hybrid approach: Use real world geometry where available, fallback to straight lines where missing
+    const presentCodes = new Set(MRT_GEOJSON.features.map(f => f.properties.code));
+    const fallbackFeatures = [];
+
+    Object.keys(MRT_LINES).forEach(code => {
+        // If the line is not in the detailed GeoJSON, generate a fallback
+        // Note: strict check on 'code'. If GeoJSON uses different code, we might double draw.
+        // But our process-routes script ensures 'code' matches.
+        if (!presentCodes.has(code)) {
+            console.warn(`Line ${code} missing from detailed geometry, using fallback.`);
+            const fallback = generateStraightLineGeoJSON(code);
+            if (fallback) fallbackFeatures.push(fallback);
+        }
+    });
+
+    const combinedData = {
+        type: 'FeatureCollection',
+        features: [...MRT_GEOJSON.features, ...fallbackFeatures]
+    };
 
     map.addSource('mrt-routes', {
         type: 'geojson',
-        data: routeGeoJSON
+        data: combinedData
+    });
+
+    // Add Station Polygons (3D Buildings)
+    map.addSource('station-polygons', {
+        type: 'geojson',
+        data: STATION_POLYGONS
+    });
+
+    map.addLayer({
+        id: 'station-buildings',
+        type: 'fill-extrusion',
+        source: 'station-polygons',
+        paint: {
+            'fill-extrusion-color': '#ffffff',
+            'fill-extrusion-height': ['get', 'height'],
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.9,
+            'fill-extrusion-vertical-gradient': true
+        }
     });
 
     Object.entries(MRT_LINES).forEach(([lineCode, line]) => {

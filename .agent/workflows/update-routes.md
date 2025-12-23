@@ -1,32 +1,38 @@
 ---
-description: Update the detailed MRT route geometry (GeoJSON) from external sources.
+description: Update the detailed MRT route geometry from the sgraildata submodule.
 ---
 
-This workflow updates `src/data/singapore-mrt-fixed.json` using fresh data from the community.
+This workflow updates `src/data/singapore-mrt-fixed.json` using the local submodule data.
 
-1.  **Download Raw Data**
-    Download the latest `singapore-mrt.geojson` from a reliable source (e.g., [raphodn/singapore-mrt Gist](https://gist.github.com/raphodn/aca68c6e5b704d021fe0b0d8a376f4aa)).
-    Save it to `src/data/raw-routes.geojson`.
+1.  **Update Submodule**
+    Ensure the submodule is up to date.
     
     ```bash
-    curl -L -o src/data/raw-routes.geojson https://gist.githubusercontent.com/raphodn/aca68c6e5b704d021fe0b0d8a376f4aa/raw/singapore-mrt.geojson
+    git submodule update --remote --merge
     ```
 
-2.  **Process Data**
-    Run the processing script to filter, fix, and standardize the GeoJSON.
+2.  **Process Routes**
+    Run the processing script to extracting lines from the submodule and map them to our system codes.
     // turbo
     ```bash
-    node scripts/process-routes.js src/data/raw-routes.geojson src/data/singapore-mrt-fixed.json
+    node scripts/process-routes.js
     ```
 
-3.  **Cleanup**
-    Remove the raw file.
+3.  **Align Stations**
+    Snap station coordinates to the new track geometry.
     // turbo
     ```bash
-    rm src/data/raw-routes.geojson
+    node scripts/align-stations.js
     ```
 
-4.  **Verification**
+4.  **Process Station Buildings**
+    Extract station models (3D footprints).
+    // turbo
+    ```bash
+    node scripts/process-station-polygons.js
+    ```
+
+5.  **Verification**
     Reload the simulator and verify that:
-    - Map lines are visible.
+    - Map lines (especially new ones like TE) are visible and curved.
     - Trains follow the tracks correctly.
