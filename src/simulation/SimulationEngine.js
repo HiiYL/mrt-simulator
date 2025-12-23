@@ -1,7 +1,23 @@
-// Simulation Engine - Manages train spawning and movement with dwell time
+// Simulation Engine - Manages train spawning and movement with per-station travel times
 import { MRT_LINES, getAllLineCodes } from '../data/mrt-routes.js';
-import { LINE_SCHEDULES, getFrequency, isPeakHour, getDwellTime, getOperatingStatus } from '../data/schedule.js';
+import { LINE_SCHEDULES, getLineFrequency, getDwellTime, getOperatingStatus, getFrequency } from '../data/schedule.js';
 import { RouteInterpolator } from './RouteInterpolator.js';
+import { INTER_STATION_TIMES } from '../data/travel-times.js';
+
+// Singleton instance
+let engineInstance = null;
+
+export function getSimulationEngine() {
+    if (!engineInstance) {
+        engineInstance = new SimulationEngine();
+    }
+    return engineInstance;
+}
+
+// Reset singleton for testing
+export function resetSimulationEngine() {
+    engineInstance = null;
+}
 
 export class SimulationEngine {
     constructor() {
@@ -16,6 +32,30 @@ export class SimulationEngine {
             const coordinates = line.stations.map(s => [s.lng, s.lat]);
             this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates);
         });
+    }
+
+    // Get per-segment travel times for a line (in minutes)
+    getSegmentTravelTimes(lineCode) {
+        // Map line codes to travel time keys (handle CG which is part of EW)
+        const timeKey = lineCode === 'CG' ? 'CG' : lineCode;
+        const times = INTER_STATION_TIMES[timeKey];
+
+        if (!times) {
+            // Fallback to 2 minutes per segment
+            const stationCount = this.routeInterpolators[lineCode]?.getStationCount() || 10;
+            return Array(stationCount - 1).fill(2);
+        }
+
+        return times;
+    }
+
+    // Calculate total journey time for a line (sum of all segments + dwell times)
+    getTotalJourneyTime(lineCode, dwellTimeMinutes) {
+        const times = this.getSegmentTravelTimes(lineCode);
+        const totalTravel = times.reduce((sum, t) => sum + t, 0);
+        const stationCount = times.length + 1;
+        const totalDwell = stationCount * dwellTimeMinutes;
+        return totalTravel + totalDwell;
     }
 
     // Calculate all train positions at a given time (in minutes from midnight)
@@ -34,22 +74,16 @@ export class SimulationEngine {
             const interpolator = this.routeInterpolators[lineCode];
             const stationCount = interpolator.getStationCount();
 
-            // Get line-specific dwell time (convert seconds to minutes)
+            // Get line-specific timings
             const dwellTimeMinutes = getDwellTime(lineCode) / 60;
+            const segmentTimes = this.getSegmentTravelTimes(lineCode);
+            const frequency = getLineFrequency(lineCode, timeInMinutes);
 
-            // Travel time between stations (minutes)
-            const travelTimePerSegment = 2; // 2 minutes between stations
-
-            // Time for one complete journey including stops
-            // Total = (segments × travel time) + (stations × dwell time)
-            const segments = stationCount - 1;
-            const journeyTime = (segments * travelTimePerSegment) + (stationCount * dwellTimeMinutes);
-
-            // Get frequency at current time
-            const frequency = getFrequency(timeInMinutes);
+            // Total journey time using per-segment times
+            const journeyTime = this.getTotalJourneyTime(lineCode, dwellTimeMinutes);
 
             // Calculate how many trains should be on the line at any time
-            const trainsOnLine = Math.ceil(journeyTime / frequency);
+            const trainsOnLine = Math.max(1, Math.ceil(journeyTime / frequency));
 
             // Time elapsed since line started operating
             const elapsedFromStart = timeInMinutes - schedule.startTime;
@@ -64,23 +98,27 @@ export class SimulationEngine {
                 // Calculate position and dwell state
                 const positionData = this.calculatePositionWithDwell(
                     interpolator,
+                    line,
                     elapsedInCycle,
-                    journeyTime,
                     stationCount,
-                    travelTimePerSegment,
-                    dwellTimeMinutes
+                    segmentTimes,
+                    dwellTimeMinutes,
+                    false // forward direction
                 );
 
-                trains.push({
-                    id: `${lineCode}-F-${i}`,
-                    line: lineCode,
-                    color: line.color,
-                    lineName: line.name,
-                    direction: 'forward',
-                    isAtStation: positionData.isAtStation,
-                    stationIndex: positionData.stationIndex,
-                    ...positionData.position
-                });
+                if (positionData) {
+                    trains.push({
+                        id: `${lineCode}-F-${i}`,
+                        line: lineCode,
+                        color: line.color,
+                        lineName: line.name,
+                        direction: 'forward',
+                        isAtStation: positionData.isAtStation,
+                        stationIndex: positionData.stationIndex,
+                        stationName: positionData.stationName,
+                        ...positionData.position
+                    });
+                }
             }
 
             // Generate trains for reverse direction (offset by half frequency)
@@ -90,136 +128,156 @@ export class SimulationEngine {
 
                 const positionData = this.calculatePositionWithDwell(
                     interpolator,
+                    line,
                     elapsedInCycle,
-                    journeyTime,
                     stationCount,
-                    travelTimePerSegment,
+                    segmentTimes,
                     dwellTimeMinutes,
                     true // reverse direction
                 );
 
-                // Flip bearing for reverse direction
-                positionData.position.bearing = (positionData.position.bearing + 180) % 360;
+                if (positionData) {
+                    // Flip bearing for reverse direction
+                    positionData.position.bearing = (positionData.position.bearing + 180) % 360;
 
-                trains.push({
-                    id: `${lineCode}-R-${i}`,
-                    line: lineCode,
-                    color: line.color,
-                    lineName: line.name,
-                    direction: 'reverse',
-                    isAtStation: positionData.isAtStation,
-                    stationIndex: positionData.stationIndex,
-                    ...positionData.position
-                });
+                    trains.push({
+                        id: `${lineCode}-R-${i}`,
+                        line: lineCode,
+                        color: line.color,
+                        lineName: line.name,
+                        direction: 'reverse',
+                        isAtStation: positionData.isAtStation,
+                        stationIndex: positionData.stationIndex,
+                        stationName: positionData.stationName,
+                        ...positionData.position
+                    });
+                }
             }
         });
 
         return trains;
     }
 
-    // Calculate position considering dwell time at stations
-    calculatePositionWithDwell(interpolator, elapsed, journeyTime, stationCount, travelTime, dwellTime, reverse = false) {
+    // Calculate position with per-segment travel times and station snapping
+    calculatePositionWithDwell(interpolator, line, elapsed, stationCount, segmentTimes, dwellTime, reverse) {
         const segments = stationCount - 1;
-        const timePerStation = travelTime + dwellTime; // Time to reach and stop at each station
 
-        // Figure out which station/segment the train is at
-        let accumulatedTime = 0;
-        let currentSegment = 0;
+        // State tracking
+        let currentStation = 0;
         let isAtStation = false;
-        let stationIndex = 0;
-        let fraction = 0;
+        let timeRemaining = elapsed;
 
-        // Initial dwell at first station
-        if (elapsed < dwellTime) {
+        // For reverse direction, we traverse segments in reverse order
+        const getSegmentTime = (segIndex) => {
+            if (reverse) {
+                // Reverse: segment 0 is the last segment in segmentTimes
+                return segmentTimes[segments - 1 - segIndex] || 2;
+            }
+            return segmentTimes[segIndex] || 2;
+        };
+
+        // Start with dwell at first station
+        if (timeRemaining < dwellTime) {
             isAtStation = true;
-            stationIndex = 0;
-            fraction = 0;
+            currentStation = 0;
         } else {
-            let remainingTime = elapsed - dwellTime; // Subtract initial dwell
+            timeRemaining -= dwellTime;
 
+            // Walk through each segment with its specific travel time
             for (let seg = 0; seg < segments; seg++) {
-                // Travel phase for this segment
-                if (remainingTime < travelTime) {
-                    // Train is traveling between stations
-                    const segmentFraction = remainingTime / travelTime;
-                    fraction = (seg + segmentFraction) / segments;
-                    currentSegment = seg;
-                    isAtStation = false;
-                    stationIndex = seg;
-                    break;
+                const thisSegmentTime = getSegmentTime(seg);
+
+                // Travel phase
+                if (timeRemaining < thisSegmentTime) {
+                    // Train is moving between stations
+                    const segmentProgress = timeRemaining / thisSegmentTime;
+
+                    // Calculate fraction based on cumulative segment distances
+                    // For now use simple segment-based fraction
+                    const overallFraction = (seg + segmentProgress) / segments;
+
+                    // Get position from interpolator
+                    const fraction = reverse ? (1 - overallFraction) : overallFraction;
+                    const position = interpolator.getPositionAtFraction(fraction);
+
+                    // Determine which stations we're between
+                    const fromStation = reverse ? (stationCount - 1 - seg) : seg;
+                    const toStation = reverse ? (stationCount - 2 - seg) : (seg + 1);
+
+                    return {
+                        position,
+                        isAtStation: false,
+                        stationIndex: fromStation,
+                        stationName: `${line.stations[Math.min(fromStation, stationCount - 1)]?.code || ''} → ${line.stations[Math.min(toStation, stationCount - 1)]?.code || ''}`
+                    };
                 }
-                remainingTime -= travelTime;
+                timeRemaining -= thisSegmentTime;
 
                 // Dwell phase at next station
-                if (remainingTime < dwellTime) {
-                    // Train is dwelling at station
-                    fraction = (seg + 1) / segments;
+                if (timeRemaining < dwellTime) {
+                    currentStation = seg + 1;
                     isAtStation = true;
-                    stationIndex = seg + 1;
                     break;
                 }
-                remainingTime -= dwellTime;
+                timeRemaining -= dwellTime;
+            }
 
-                // If we've gone through all segments
-                if (seg === segments - 1) {
-                    fraction = 1;
-                    isAtStation = true;
-                    stationIndex = stationCount - 1;
-                }
+            // If we've exhausted all time, train is at final station
+            if (!isAtStation && timeRemaining >= 0) {
+                currentStation = segments;
+                isAtStation = true;
             }
         }
 
-        // Reverse the fraction for reverse direction
-        if (reverse) {
-            fraction = 1 - fraction;
-            stationIndex = stationCount - 1 - stationIndex;
+        // Get exact station position for dwelling trains
+        const actualStation = reverse ? (stationCount - 1 - currentStation) : currentStation;
+        const station = line.stations[Math.min(actualStation, stationCount - 1)];
+
+        if (!station) {
+            return null;
         }
 
-        // Get actual position from interpolator
-        const position = interpolator.getPositionAtFraction(Math.max(0, Math.min(1, fraction)));
+        if (isAtStation) {
+            // Snap to exact station coordinates
+            return {
+                position: {
+                    lng: station.lng,
+                    lat: station.lat,
+                    bearing: interpolator.getBearingAtStation(currentStation, reverse),
+                    fraction: currentStation / Math.max(1, segments)
+                },
+                isAtStation: true,
+                stationIndex: actualStation,
+                stationName: station.name || station.code
+            };
+        }
 
-        return {
-            position,
-            isAtStation,
-            stationIndex
-        };
+        // Fallback (shouldn't reach here)
+        return null;
     }
 
-    // Get statistics for the current simulation time
+    // Get statistics about current simulation state
     getStatistics(timeInMinutes) {
         const trains = this.getTrainPositions(timeInMinutes);
+        const trainsInMotion = trains.filter(t => !t.isAtStation).length;
+        const trainsAtStations = trains.filter(t => t.isAtStation).length;
+        const operatingStatus = getOperatingStatus(timeInMinutes);
+        const frequency = getFrequency(timeInMinutes);
 
-        const trainsByLine = {};
-        getAllLineCodes().forEach(code => {
-            trainsByLine[code] = trains.filter(t => t.line === code).length;
+        // Count by line
+        const byLine = {};
+        trains.forEach(train => {
+            byLine[train.line] = (byLine[train.line] || 0) + 1;
         });
-
-        const trainsAtStation = trains.filter(t => t.isAtStation).length;
-        const trainsInMotion = trains.length - trainsAtStation;
 
         return {
             totalTrains: trains.length,
-            trainsAtStation,
             trainsInMotion,
-            trainsByLine,
-            isPeakHour: isPeakHour(timeInMinutes),
-            operatingStatus: getOperatingStatus(timeInMinutes),
-            frequency: getFrequency(timeInMinutes)
+            trainsAtStations,
+            trainsAtStation: trainsAtStations, // Alias for backwards compatibility
+            byLine,
+            operatingStatus,
+            frequency
         };
     }
-}
-
-// Singleton instance
-let engineInstance = null;
-
-export function getSimulationEngine() {
-    if (!engineInstance) {
-        engineInstance = new SimulationEngine();
-    }
-    return engineInstance;
-}
-
-// Reset singleton (for testing)
-export function resetSimulationEngine() {
-    engineInstance = null;
 }

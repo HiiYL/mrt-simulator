@@ -1,56 +1,78 @@
 // Singapore MRT Schedule Configuration
 // Official operating hours from SMRT and SBS Transit (December 2024)
+// Travel times based on actual journey data
 
-// Per-line operating hours (in minutes from midnight)
-// Based on first/last train from central stations (weekday schedules)
+// Per-line operating hours and configuration
 export const LINE_SCHEDULES = {
     NS: {
         name: 'North-South Line',
         operator: 'SMRT',
-        // First train: ~5:00 AM, Last train: ~12:15 AM
         startTime: 5 * 60,        // 5:00 AM
         endTime: 24 * 60 + 15,    // 12:15 AM next day
         stationDwellTime: 30,     // seconds at each station
+        avgTravelTime: 2.5,       // minutes between stations (varies 2-4 min)
+        peakFrequency: 2,         // minutes during peak
+        offPeakFrequency: 5,      // minutes during off-peak
     },
     EW: {
         name: 'East-West Line',
         operator: 'SMRT',
-        // First train: ~5:00 AM, Last train: ~12:16 AM
         startTime: 5 * 60,        // 5:00 AM
         endTime: 24 * 60 + 16,    // 12:16 AM next day
         stationDwellTime: 30,
+        avgTravelTime: 2.5,       // minutes between stations
+        peakFrequency: 2,
+        offPeakFrequency: 5,
     },
     NE: {
         name: 'North-East Line',
         operator: 'SBS Transit',
-        // First train: ~5:39 AM, Last train: ~11:25 PM
         startTime: 5 * 60 + 39,   // 5:39 AM
         endTime: 23 * 60 + 25,    // 11:25 PM
         stationDwellTime: 25,     // Driverless trains, slightly faster
+        avgTravelTime: 2.5,
+        peakFrequency: 2,
+        offPeakFrequency: 5,
     },
     CC: {
         name: 'Circle Line',
         operator: 'SMRT',
-        // First train: ~5:50 AM, Last train: ~11:59 PM
         startTime: 5 * 60 + 50,   // 5:50 AM
         endTime: 23 * 60 + 59,    // 11:59 PM
         stationDwellTime: 25,     // Driverless trains
+        avgTravelTime: 2,         // Circle line generally faster
+        peakFrequency: 2,
+        offPeakFrequency: 4,
     },
     DT: {
         name: 'Downtown Line',
         operator: 'SBS Transit',
-        // First train: ~6:04 AM, Last train: ~12:07 AM (from Downtown station)
         startTime: 6 * 60 + 4,    // 6:04 AM
         endTime: 24 * 60 + 7,     // 12:07 AM next day
         stationDwellTime: 25,     // Driverless trains
+        avgTravelTime: 2,
+        peakFrequency: 2,
+        offPeakFrequency: 5,
     },
     TE: {
         name: 'Thomson-East Coast Line',
         operator: 'SMRT',
-        // First train: ~5:48 AM, Last train: ~12:26 AM
         startTime: 5 * 60 + 48,   // 5:48 AM
         endTime: 24 * 60 + 26,    // 12:26 AM next day
         stationDwellTime: 25,     // Driverless trains
+        avgTravelTime: 2.5,
+        peakFrequency: 3,         // TEL slightly less frequent
+        offPeakFrequency: 6,
+    },
+    CG: {
+        name: 'Changi Airport Line',
+        operator: 'SMRT',
+        startTime: 5 * 60 + 20,   // 5:20 AM
+        endTime: 24 * 60 + 6,     // 12:06 AM next day
+        stationDwellTime: 40,     // Longer dwell at airport
+        avgTravelTime: 3,         // Tanah Merah-Expo: 2 min, Expo-Changi: 4 min
+        peakFrequency: 8,         // 7-9 minutes during peak
+        offPeakFrequency: 12,     // 12-15 minutes during off-peak
     }
 };
 
@@ -65,15 +87,13 @@ export const SCHEDULE_CONFIG = {
         { start: 17 * 60, end: 20 * 60 }            // 5:00 PM - 8:00 PM
     ],
 
-    // Train frequency in minutes (based on LTA data)
-    peakFrequency: 2,         // 2 minutes during peak
-    offPeakFrequency: 5,      // 5 minutes during off-peak
-    nightFrequency: 7,        // 7 minutes late night (after 10 PM)
+    // Default frequencies (used if line doesn't specify)
+    peakFrequency: 2,
+    offPeakFrequency: 5,
+    nightFrequency: 7,
 
-    // Average travel time between stations (minutes)
-    avgTravelTime: 2,         // 2 minutes between stations
-
-    // Default dwell time at stations (seconds)
+    // Default values
+    avgTravelTime: 2.5,
     defaultDwellTime: 30
 };
 
@@ -93,10 +113,24 @@ export function isPeakHour(timeInMinutes) {
 
 // Check if it's late night (after 10 PM)
 export function isLateNight(timeInMinutes) {
-    return timeInMinutes >= 22 * 60; // After 10 PM
+    return timeInMinutes >= 22 * 60;
 }
 
-// Get train frequency at a given time
+// Get train frequency for a specific line at a given time
+export function getLineFrequency(lineCode, timeInMinutes) {
+    const schedule = LINE_SCHEDULES[lineCode];
+    if (!schedule) return getFrequency(timeInMinutes);
+
+    if (isPeakHour(timeInMinutes)) {
+        return schedule.peakFrequency || SCHEDULE_CONFIG.peakFrequency;
+    }
+    if (isLateNight(timeInMinutes)) {
+        return SCHEDULE_CONFIG.nightFrequency;
+    }
+    return schedule.offPeakFrequency || SCHEDULE_CONFIG.offPeakFrequency;
+}
+
+// Get default train frequency at a given time (for backward compatibility)
 export function getFrequency(timeInMinutes) {
     if (isPeakHour(timeInMinutes)) {
         return SCHEDULE_CONFIG.peakFrequency;
@@ -105,6 +139,12 @@ export function getFrequency(timeInMinutes) {
         return SCHEDULE_CONFIG.nightFrequency;
     }
     return SCHEDULE_CONFIG.offPeakFrequency;
+}
+
+// Get travel time between stations for a specific line
+export function getTravelTime(lineCode) {
+    const schedule = LINE_SCHEDULES[lineCode];
+    return schedule?.avgTravelTime || SCHEDULE_CONFIG.avgTravelTime;
 }
 
 // Get dwell time for a specific line (in seconds)

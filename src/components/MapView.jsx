@@ -96,7 +96,7 @@ function MapViewComponent({ trains }) {
                 }
             });
 
-            // Add train glow effect (larger, semi-transparent circle behind)
+            // Add train glow effect (larger for stopped trains)
             map.addLayer({
                 id: 'trains-glow',
                 type: 'circle',
@@ -106,18 +106,18 @@ function MapViewComponent({ trains }) {
                         'interpolate',
                         ['linear'],
                         ['zoom'],
-                        10, 6,
-                        12, 12,
-                        14, 18,
-                        16, 28
+                        10, ['case', ['==', ['get', 'isAtStation'], 1], 8, 5],
+                        12, ['case', ['==', ['get', 'isAtStation'], 1], 16, 10],
+                        14, ['case', ['==', ['get', 'isAtStation'], 1], 24, 16],
+                        16, ['case', ['==', ['get', 'isAtStation'], 1], 36, 24]
                     ],
                     'circle-color': ['get', 'color'],
-                    'circle-opacity': 0.3,
+                    'circle-opacity': ['case', ['==', ['get', 'isAtStation'], 1], 0.4, 0.25],
                     'circle-blur': 0.5
                 }
             });
 
-            // Add train circles layer - the main train marker
+            // Add train circles layer - larger for stopped trains
             map.addLayer({
                 id: 'trains-circle',
                 type: 'circle',
@@ -127,14 +127,14 @@ function MapViewComponent({ trains }) {
                         'interpolate',
                         ['linear'],
                         ['zoom'],
-                        10, 3,
-                        12, 6,
-                        14, 10,
-                        16, 16
+                        10, ['case', ['==', ['get', 'isAtStation'], 1], 4, 3],
+                        12, ['case', ['==', ['get', 'isAtStation'], 1], 8, 5],
+                        14, ['case', ['==', ['get', 'isAtStation'], 1], 12, 8],
+                        16, ['case', ['==', ['get', 'isAtStation'], 1], 18, 14]
                     ],
                     'circle-color': ['get', 'color'],
-                    'circle-stroke-width': 2,
-                    'circle-stroke-color': '#ffffff',
+                    'circle-stroke-width': ['case', ['==', ['get', 'isAtStation'], 1], 3, 2],
+                    'circle-stroke-color': ['case', ['==', ['get', 'isAtStation'], 1], '#ffffff', 'rgba(255,255,255,0.8)'],
                     'circle-opacity': 1
                 }
             });
@@ -161,7 +161,7 @@ function MapViewComponent({ trains }) {
 
         if (!source) return;
 
-        // Convert trains to GeoJSON
+        // Convert trains to GeoJSON with station status
         const geojson = {
             type: 'FeatureCollection',
             features: trains.map(train => ({
@@ -176,7 +176,9 @@ function MapViewComponent({ trains }) {
                     color: train.color,
                     lineName: train.lineName,
                     direction: train.direction,
-                    bearing: train.bearing || 0
+                    bearing: train.bearing || 0,
+                    isAtStation: train.isAtStation ? 1 : 0,
+                    stationName: train.stationName || ''
                 }
             }))
         };

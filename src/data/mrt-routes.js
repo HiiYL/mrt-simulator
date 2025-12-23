@@ -202,6 +202,15 @@ export const MRT_LINES = {
             { code: 'TE28', name: 'Siglap', lat: 1.3110, lng: 103.9230 },
             { code: 'TE29', name: 'Bayshore', lat: 1.3140, lng: 103.9390 },
         ]
+    },
+    CG: {
+        name: 'Changi Airport Line',
+        color: '#009645', // Same as EW (branch line)
+        stations: [
+            { code: 'CG', name: 'Tanah Merah', lat: 1.3272, lng: 103.9463 }, // Interchange with EW4
+            { code: 'CG1', name: 'Expo', lat: 1.3351, lng: 103.9615 },       // Interchange with DT35
+            { code: 'CG2', name: 'Changi Airport', lat: 1.3574, lng: 103.9884 },
+        ]
     }
 };
 

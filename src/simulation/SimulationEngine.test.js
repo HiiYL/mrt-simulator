@@ -1,7 +1,7 @@
 // Unit tests for SimulationEngine
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SimulationEngine, resetSimulationEngine } from './SimulationEngine.js';
-import { LINE_SCHEDULES, SCHEDULE_CONFIG, isPeakHour, getFrequency, getDwellTime } from '../data/schedule.js';
+import { LINE_SCHEDULES, SCHEDULE_CONFIG, isPeakHour, getFrequency, getDwellTime, getLineFrequency, getTravelTime } from '../data/schedule.js';
 import { MRT_LINES } from '../data/mrt-routes.js';
 
 describe('SimulationEngine', () => {

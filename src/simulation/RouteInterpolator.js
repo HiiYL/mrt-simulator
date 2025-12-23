@@ -3,7 +3,7 @@ import * as turf from '@turf/turf';
 
 export class RouteInterpolator {
     constructor(coordinates) {
-        // coordinates: [[lng, lat], [lng, lat], ...]
+        // coordinates: [[lng, lat], [lng, lat], ...] - these are station coordinates
         this.coordinates = coordinates;
         this.lineString = turf.lineString(coordinates);
         this.totalLength = turf.length(this.lineString, { units: 'kilometers' });
@@ -59,6 +59,58 @@ export class RouteInterpolator {
         );
     }
 
+    // Get bearing at a specific station index
+    getBearingAtStation(stationIndex, reverse = false) {
+        const stations = this.coordinates.length;
+
+        // For first station, use bearing to next station
+        if (stationIndex === 0) {
+            const from = this.coordinates[0];
+            const to = this.coordinates[1];
+            const bearing = turf.bearing(turf.point(from), turf.point(to));
+            return reverse ? (bearing + 180) % 360 : bearing;
+        }
+
+        // For last station, use bearing from previous station
+        if (stationIndex >= stations - 1) {
+            const from = this.coordinates[stations - 2];
+            const to = this.coordinates[stations - 1];
+            const bearing = turf.bearing(turf.point(from), turf.point(to));
+            return reverse ? (bearing + 180) % 360 : bearing;
+        }
+
+        // For middle stations, average the approach and departure bearings
+        const prev = this.coordinates[stationIndex - 1];
+        const curr = this.coordinates[stationIndex];
+        const next = this.coordinates[stationIndex + 1];
+
+        const bearingIn = turf.bearing(turf.point(prev), turf.point(curr));
+        const bearingOut = turf.bearing(turf.point(curr), turf.point(next));
+
+        // Average the bearings (handling the circular nature of angles)
+        let avgBearing = (bearingIn + bearingOut) / 2;
+
+        // If the bearings are more than 180 apart, adjust
+        if (Math.abs(bearingIn - bearingOut) > 180) {
+            avgBearing = (avgBearing + 180) % 360;
+        }
+
+        return reverse ? (avgBearing + 180) % 360 : avgBearing;
+    }
+
+    // Get exact position at a station (snapped to station coordinates)
+    getPositionAtStation(stationIndex, reverse = false) {
+        const idx = Math.max(0, Math.min(stationIndex, this.coordinates.length - 1));
+        const coord = this.coordinates[idx];
+
+        return {
+            lng: coord[0],
+            lat: coord[1],
+            bearing: this.getBearingAtStation(stationIndex, reverse),
+            fraction: idx / (this.coordinates.length - 1)
+        };
+    }
+
     // Helper to get just the point without bearing (avoids recursion)
     getPointAtFraction(fraction) {
         fraction = Math.max(0, Math.min(1, fraction));
@@ -91,5 +143,24 @@ export class RouteInterpolator {
     // Get number of stations
     getStationCount() {
         return this.coordinates.length;
+    }
+
+    // Calculate travel time for a specific segment based on line's total duration
+    // totalDurationMinutes: Total time for the entire line (e.g. 70 mins)
+    // segmentIndex: Index of the segment (0 to stationCount-2)
+    getSegmentDuration(totalDurationMinutes, segmentIndex) {
+        if (segmentIndex < 0 || segmentIndex >= this.segmentDistances.length - 1) {
+            return 2; // Default fallback
+        }
+
+        const startDist = this.segmentDistances[segmentIndex];
+        const endDist = this.segmentDistances[segmentIndex + 1];
+        const segmentDist = endDist - startDist;
+
+        // Proportion of total length
+        const fraction = segmentDist / this.totalLength;
+
+        // Time for this segment
+        return fraction * totalDurationMinutes;
     }
 }
