@@ -44,7 +44,16 @@ export class SimulationEngine {
             // Ensure we have a LineString (array of points)
             // If MultiLineString, we technically should merge them, but for now take the longest or first?
             // Inspection implies LineString.
-            const detailedCoords = (feature && feature.geometry.type === 'LineString') ? feature.geometry.coordinates : null;
+            // detailedCoords = (feature && feature.geometry.type === 'LineString') ? feature.geometry.coordinates : null;
+            let detailedCoords = null;
+            if (feature) {
+                if (feature.geometry.type === 'LineString') {
+                    detailedCoords = feature.geometry.coordinates;
+                } else if (feature.geometry.type === 'MultiLineString') {
+                    // Pick longest segment
+                    detailedCoords = feature.geometry.coordinates.reduce((prev, curr) => curr.length > prev.length ? curr : prev, []);
+                }
+            }
 
             this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates, detailedCoords);
             this.activeTrains.set(lineCode, []);
@@ -544,7 +553,10 @@ export class SimulationEngine {
         const station = line.stations[Math.min(actualStation, stationCount - 1)];
         if (!station) return null;
         if (isAtStation) {
-            return { position: { lng: station.lng, lat: station.lat, bearing: interpolator.getBearingAtStation(actualStation, reverse) }, isAtStation: true, stationIndex: actualStation, stationName: station.name, speed: 0 };
+            // Use interpolator to get the ON-TRACK position for the station
+            // This prevents jumping if the visual station marker is slightly offset from the track vertex
+            const snappedPos = interpolator.getPositionBetweenStations(actualStation, actualStation, 0, reverse);
+            return { position: snappedPos, isAtStation: true, stationIndex: actualStation, stationName: station.name, speed: 0 };
         }
         return null;
     }
