@@ -23,43 +23,57 @@ function App() {
     return 8 * 60;
   };
 
-  const [currentTime, setCurrentTime] = useState(getInitialTime);
+  const [displayTime, setDisplayTime] = useState(getInitialTime);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [playbackSpeed, setPlaybackSpeed] = useState(60); // 60x default (1 sim-second = 1 real-minute)
+  const [playbackSpeed, setPlaybackSpeed] = useState(60);
   const [trains, setTrains] = useState([]);
   const [stats, setStats] = useState(null);
 
   const simulationEngine = useRef(getSimulationEngine());
   const lastUpdateTime = useRef(Date.now());
+  const currentTimeRef = useRef(getInitialTime());
 
-  // Animation loop
+  // Animation loop - uses refs to avoid re-render cascades
   useEffect(() => {
     let animationFrame;
+    let lastDisplayUpdate = 0;
 
-    const animate = () => {
+    const animate = (timestamp) => {
       if (isPlaying) {
         const now = Date.now();
         const deltaMs = now - lastUpdateTime.current;
         lastUpdateTime.current = now;
 
         // Calculate time increment based on playback speed
-        // 60x means 1 real second = 1 simulated minute
         const deltaMinutes = (deltaMs / 1000) * (playbackSpeed / 60);
 
-        setCurrentTime(prev => {
-          let newTime = prev + deltaMinutes;
+        currentTimeRef.current += deltaMinutes;
 
-          // Loop back to start if past end time
-          if (newTime >= SCHEDULE_CONFIG.endTime) {
-            newTime = SCHEDULE_CONFIG.startTime;
-          }
+        // Loop back to start if past end time
+        if (currentTimeRef.current >= SCHEDULE_CONFIG.endTime) {
+          currentTimeRef.current = SCHEDULE_CONFIG.startTime;
+        }
 
-          return newTime;
-        });
+        // Update train positions directly (no state update)
+        const engine = simulationEngine.current;
+        const trainPositions = engine.getTrainPositions(currentTimeRef.current);
+        setTrains(trainPositions);
+
+        // Only update display time and stats every 100ms to reduce re-renders
+        if (timestamp - lastDisplayUpdate > 100) {
+          lastDisplayUpdate = timestamp;
+          setDisplayTime(currentTimeRef.current);
+          setStats(engine.getStatistics(currentTimeRef.current));
+        }
       }
 
       animationFrame = requestAnimationFrame(animate);
     };
+
+    // Initial train positions
+    const engine = simulationEngine.current;
+    setTrains(engine.getTrainPositions(currentTimeRef.current));
+    setStats(engine.getStatistics(currentTimeRef.current));
 
     animationFrame = requestAnimationFrame(animate);
 
@@ -68,19 +82,14 @@ function App() {
     };
   }, [isPlaying, playbackSpeed]);
 
-  // Update train positions when time changes
-  useEffect(() => {
-    const engine = simulationEngine.current;
-    const trainPositions = engine.getTrainPositions(currentTime);
-    const statistics = engine.getStatistics(currentTime);
-
-    setTrains(trainPositions);
-    setStats(statistics);
-  }, [currentTime]);
-
   const handleTimeChange = useCallback((time) => {
-    setCurrentTime(time);
+    currentTimeRef.current = time;
+    setDisplayTime(time);
     lastUpdateTime.current = Date.now();
+
+    const engine = simulationEngine.current;
+    setTrains(engine.getTrainPositions(time));
+    setStats(engine.getStatistics(time));
   }, []);
 
   const handlePlayPause = useCallback(() => {
@@ -97,10 +106,10 @@ function App() {
     <div className="app">
       <MapView trains={trains} />
 
-      <InfoPanel stats={stats} currentTime={currentTime} />
+      <InfoPanel stats={stats} currentTime={displayTime} />
 
       <TimeControls
-        currentTime={currentTime}
+        currentTime={displayTime}
         onTimeChange={handleTimeChange}
         isPlaying={isPlaying}
         onPlayPause={handlePlayPause}

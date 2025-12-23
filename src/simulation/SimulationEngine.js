@@ -1,13 +1,11 @@
 // Simulation Engine - Manages train spawning and movement
 import { MRT_LINES, getAllLineCodes } from '../data/mrt-routes.js';
-import { SCHEDULE_CONFIG, getFrequency, isPeakHour } from '../data/schedule.js';
+import { LINE_SCHEDULES, getFrequency, isPeakHour } from '../data/schedule.js';
 import { RouteInterpolator } from './RouteInterpolator.js';
 
 export class SimulationEngine {
     constructor() {
-        this.trains = [];
         this.routeInterpolators = {};
-        this.lastSpawnTimes = {};
 
         // Initialize route interpolators for each line
         this.initializeRoutes();
@@ -17,88 +15,86 @@ export class SimulationEngine {
         Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
             const coordinates = line.stations.map(s => [s.lng, s.lat]);
             this.routeInterpolators[lineCode] = new RouteInterpolator(coordinates);
-
-            // Track last spawn time for both directions
-            this.lastSpawnTimes[lineCode] = {
-                forward: SCHEDULE_CONFIG.startTime,
-                reverse: SCHEDULE_CONFIG.startTime
-            };
         });
     }
 
     // Calculate all train positions at a given time (in minutes from midnight)
     getTrainPositions(timeInMinutes) {
-        // Outside operating hours
-        if (timeInMinutes < SCHEDULE_CONFIG.startTime || timeInMinutes >= SCHEDULE_CONFIG.endTime) {
-            return [];
-        }
-
         const trains = [];
-        const frequency = getFrequency(timeInMinutes);
 
         Object.entries(MRT_LINES).forEach(([lineCode, line]) => {
+            const schedule = LINE_SCHEDULES[lineCode];
+            if (!schedule) return;
+
+            // Check if line is operating at this time
+            if (timeInMinutes < schedule.startTime || timeInMinutes > schedule.endTime) {
+                return;
+            }
+
             const interpolator = this.routeInterpolators[lineCode];
-            const routeLength = interpolator.getTotalLength();
             const stationCount = interpolator.getStationCount();
 
             // Calculate journey time for the entire route (in minutes)
-            const journeyTime = (stationCount - 1) * SCHEDULE_CONFIG.avgStationTime;
+            // Each segment takes avgStationTime minutes
+            const journeyTime = (stationCount - 1) * 2.5; // 2.5 min per segment
 
-            // Calculate how many trains should be on the line
-            // One train every 'frequency' minutes, and they take 'journeyTime' minutes to traverse
-            const trainsNeeded = Math.ceil(journeyTime / frequency) + 1;
+            // Get frequency at current time
+            const frequency = getFrequency(timeInMinutes);
+
+            // Calculate how many trains should be on the line at any time
+            // Trains depart every 'frequency' minutes and take 'journeyTime' to traverse
+            const trainsOnLine = Math.ceil(journeyTime / frequency);
 
             // Generate trains for forward direction
-            for (let i = 0; i < trainsNeeded; i++) {
-                const departureTime = SCHEDULE_CONFIG.startTime + (i * frequency);
+            // Calculate based on which "wave" of trains we're on
+            for (let i = 0; i < trainsOnLine; i++) {
+                // Calculate when this train departed based on current position cycle
+                // Each train is offset by 'frequency' minutes from the previous
+                const timeOffset = i * frequency;
 
-                // Skip if train hasn't departed yet
-                if (departureTime > timeInMinutes) continue;
+                // Calculate elapsed time since this train's departure in its current run
+                const elapsedInCycle = (timeInMinutes - schedule.startTime + timeOffset) % journeyTime;
 
-                const elapsedTime = timeInMinutes - departureTime;
+                // Position as fraction of journey (0 to 1)
+                const fraction = elapsedInCycle / journeyTime;
 
-                // Skip if train has completed journey
-                if (elapsedTime > journeyTime) continue;
+                // Only add if the fraction is valid
+                if (fraction >= 0 && fraction <= 1) {
+                    const position = interpolator.getPositionAtFraction(fraction);
 
-                const fraction = elapsedTime / journeyTime;
-                const position = interpolator.getPositionAtFraction(fraction);
-
-                trains.push({
-                    id: `${lineCode}-F-${i}`,
-                    line: lineCode,
-                    color: line.color,
-                    lineName: line.name,
-                    direction: 'forward',
-                    ...position
-                });
+                    trains.push({
+                        id: `${lineCode}-F-${i}`,
+                        line: lineCode,
+                        color: line.color,
+                        lineName: line.name,
+                        direction: 'forward',
+                        ...position
+                    });
+                }
             }
 
             // Generate trains for reverse direction
-            for (let i = 0; i < trainsNeeded; i++) {
-                // Offset reverse trains by half the frequency
-                const departureTime = SCHEDULE_CONFIG.startTime + (i * frequency) + (frequency / 2);
+            // Offset by half frequency so they're interleaved with forward trains
+            for (let i = 0; i < trainsOnLine; i++) {
+                const timeOffset = i * frequency + (frequency / 2);
+                const elapsedInCycle = (timeInMinutes - schedule.startTime + timeOffset) % journeyTime;
+                const fraction = 1 - (elapsedInCycle / journeyTime);
 
-                if (departureTime > timeInMinutes) continue;
+                if (fraction >= 0 && fraction <= 1) {
+                    const position = interpolator.getPositionAtFraction(fraction);
 
-                const elapsedTime = timeInMinutes - departureTime;
+                    // Flip bearing for reverse direction
+                    position.bearing = (position.bearing + 180) % 360;
 
-                if (elapsedTime > journeyTime) continue;
-
-                // Reverse direction: 1 - fraction
-                const fraction = 1 - (elapsedTime / journeyTime);
-                const position = interpolator.getPositionAtFraction(fraction);
-
-                // Flip bearing for reverse direction
-                position.bearing = (position.bearing + 180) % 360;
-
-                trains.push({
-                    id: `${lineCode}-R-${i}`,
-                    line: lineCode,
-                    color: line.color,
-                    lineName: line.name,
-                    direction: 'reverse',
-                    ...position
-                });
+                    trains.push({
+                        id: `${lineCode}-R-${i}`,
+                        line: lineCode,
+                        color: line.color,
+                        lineName: line.name,
+                        direction: 'reverse',
+                        ...position
+                    });
+                }
             }
         });
 

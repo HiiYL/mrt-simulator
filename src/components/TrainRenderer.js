@@ -10,6 +10,9 @@ export class TrainRenderer {
         this.renderer = null;
         this.trainMeshes = new Map();
 
+        // Store model transform for coordinate conversion
+        this.modelTransform = null;
+
         this.customLayer = this.createCustomLayer();
     }
 
@@ -22,8 +25,8 @@ export class TrainRenderer {
             renderingMode: '3d',
 
             onAdd(map, gl) {
-                self.scene = new THREE.Scene();
                 self.camera = new THREE.Camera();
+                self.scene = new THREE.Scene();
 
                 // Create renderer using the map's canvas WebGL context
                 self.renderer = new THREE.WebGLRenderer({
@@ -34,30 +37,32 @@ export class TrainRenderer {
 
                 self.renderer.autoClear = false;
 
-                // Add ambient light
-                const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+                // Add strong ambient light for visibility
+                const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
                 self.scene.add(ambientLight);
 
                 // Add directional light
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
-                directionalLight.position.set(1, 1, 1).normalize();
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(0, 70, 100);
                 self.scene.add(directionalLight);
+
+                console.log('TrainRenderer: layer added to map');
             },
 
             render(gl, matrix) {
-                // Update camera matrix to match MapLibre's camera
-                const rotationX = new THREE.Matrix4().makeRotationAxis(
-                    new THREE.Vector3(1, 0, 0),
-                    Math.PI / 2
-                );
+                if (!self.scene || !self.camera || !self.renderer) return;
 
+                // Convert matrix array to Three.js Matrix4
                 const m = new THREE.Matrix4().fromArray(matrix);
-                self.camera.projectionMatrix = m.multiply(rotationX);
+
+                // Apply rotation to align with MapLibre's coordinate system
+                const l = new THREE.Matrix4()
+                    .makeRotationAxis(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+
+                self.camera.projectionMatrix = m.multiply(l);
 
                 self.renderer.resetState();
                 self.renderer.render(self.scene, self.camera);
-                // Note: Don't call triggerRepaint() here as it causes infinite loops
-                // The map will be repainted by the animation loop in App.jsx
             }
         };
     }
@@ -66,9 +71,22 @@ export class TrainRenderer {
         return this.customLayer;
     }
 
+    // Convert lng/lat to world position for Three.js
+    lngLatToWorld(lng, lat, altitude = 0) {
+        const mercator = maplibregl.MercatorCoordinate.fromLngLat([lng, lat], altitude);
+        return {
+            x: mercator.x,
+            y: mercator.y,
+            z: mercator.z,
+            scale: mercator.meterInMercatorCoordinateUnits()
+        };
+    }
+
     // Update train positions
     updateTrains(trains) {
-        if (!this.scene) return;
+        if (!this.scene) {
+            return;
+        }
 
         const existingIds = new Set(this.trainMeshes.keys());
         const newIds = new Set(trains.map(t => t.id));
@@ -79,20 +97,18 @@ export class TrainRenderer {
                 const mesh = this.trainMeshes.get(id);
                 this.scene.remove(mesh);
                 mesh.geometry.dispose();
-                mesh.material.dispose();
+                if (mesh.material.dispose) mesh.material.dispose();
                 this.trainMeshes.delete(id);
             }
         });
 
         // Update or create trains
-        trains.forEach(train => {
-            const mercatorCoord = maplibregl.MercatorCoordinate.fromLngLat(
-                [train.lng, train.lat],
-                0 // altitude
-            );
+        trains.forEach((train) => {
+            // Convert to world coordinates with slight elevation
+            const world = this.lngLatToWorld(train.lng, train.lat, 20);
 
-            // Scale factor for the train model
-            const scale = mercatorCoord.meterInMercatorCoordinateUnits() * 80;
+            // Scale: each train should be about 100 meters long visually
+            const trainScale = world.scale * 100;
 
             let mesh = this.trainMeshes.get(train.id);
 
@@ -104,70 +120,41 @@ export class TrainRenderer {
             }
 
             // Update position
-            mesh.position.set(
-                mercatorCoord.x,
-                mercatorCoord.y,
-                mercatorCoord.z
-            );
+            mesh.position.set(world.x, world.y, world.z);
 
-            // Update rotation (bearing)
+            // Update rotation (bearing) - convert bearing to radians
+            // Bearing is clockwise from north, Three.js rotation is counter-clockwise
             mesh.rotation.z = -THREE.MathUtils.degToRad(train.bearing || 0);
 
             // Update scale
-            mesh.scale.set(scale, scale, scale);
+            mesh.scale.set(trainScale, trainScale, trainScale);
         });
     }
 
     createTrainMesh(color) {
-        // Create a simple train model (elongated box)
+        // Create a simple but visible train model
         const trainLength = 3;
         const trainWidth = 1;
-        const trainHeight = 0.8;
+        const trainHeight = 1;
 
         const geometry = new THREE.BoxGeometry(trainLength, trainWidth, trainHeight);
 
-        // Create material with the line color
-        const material = new THREE.MeshPhongMaterial({
+        // Use MeshBasicMaterial for guaranteed visibility (not affected by lighting issues)
+        const material = new THREE.MeshBasicMaterial({
             color: new THREE.Color(color),
-            emissive: new THREE.Color(color).multiplyScalar(0.3),
-            shininess: 100,
-            transparent: true,
-            opacity: 0.95
+            transparent: false
         });
 
         const mesh = new THREE.Mesh(geometry, material);
 
-        // Add a small roof/window section
-        const roofGeometry = new THREE.BoxGeometry(
-            trainLength * 0.95,
-            trainWidth * 0.8,
-            trainHeight * 0.3
-        );
-        const roofMaterial = new THREE.MeshPhongMaterial({
-            color: 0x333333,
-            shininess: 100
+        // Add a contrasting top
+        const roofGeometry = new THREE.BoxGeometry(trainLength * 0.9, trainWidth * 0.7, 0.3);
+        const roofMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff
         });
         const roof = new THREE.Mesh(roofGeometry, roofMaterial);
-        roof.position.z = trainHeight * 0.5;
+        roof.position.z = trainHeight * 0.5 + 0.15;
         mesh.add(roof);
-
-        // Add front lights
-        const lightGeometry = new THREE.CircleGeometry(0.15, 8);
-        const lightMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffffcc,
-            transparent: true,
-            opacity: 0.9
-        });
-
-        const frontLight1 = new THREE.Mesh(lightGeometry, lightMaterial);
-        frontLight1.position.set(trainLength / 2 + 0.01, trainWidth * 0.25, 0);
-        frontLight1.rotation.y = Math.PI / 2;
-        mesh.add(frontLight1);
-
-        const frontLight2 = new THREE.Mesh(lightGeometry, lightMaterial);
-        frontLight2.position.set(trainLength / 2 + 0.01, -trainWidth * 0.25, 0);
-        frontLight2.rotation.y = Math.PI / 2;
-        mesh.add(frontLight2);
 
         return mesh;
     }
@@ -177,7 +164,7 @@ export class TrainRenderer {
         this.trainMeshes.forEach(mesh => {
             this.scene.remove(mesh);
             mesh.geometry.dispose();
-            mesh.material.dispose();
+            if (mesh.material.dispose) mesh.material.dispose();
         });
         this.trainMeshes.clear();
 
